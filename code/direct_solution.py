@@ -53,14 +53,14 @@ if __name__ == "__main__":
         # Compute the analytical solution
         u_exact = analytical_solution(x)
 
-        # Plot the numerical and analytical solutions
-        plt.plot(x, u, label=f'Numerical (h = {h})')
-        plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
-
         # Compute and print the RMSE
         rmse = calculate_rmse(u, u_exact)
-        print(f'RMSE for h = {h}: {rmse:.6f}')
+        print(f'RMSE for h = {h}: {rmse:.2E}')
+        # Plot the numerical and analytical solutions
+        plt.plot(x, u, label=f'Numerical (h = {h}), rmse: {rmse:.2E}')
 
+    # Only plot the last exact solution
+    plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
     # Finalize the plot
     plt.title('Helmholtz Equation: Numerical vs Analytical Solutions')
     plt.xlabel('x')
