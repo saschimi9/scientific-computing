@@ -3,19 +3,16 @@ import numpy as np
 import scipy.linalg as la
 
 
-def create_discretized_diffusion_equation_matrix(size=10, c=0.1):
+def create_discretized_helmholtz_matrix(size=10, c=0.1):
+    """Setup and return the system matrix A^h with the form tridiag[-1, 2+h^2c, -1]
+    where h = 1/size and the size of the matrix is (size - 1) x (size - 1)
+    """
     h = 1/size
-    A = (2 + h**2 * c) * np.identity(size)
-    for i in range(1, size):
+    A = (2 + h**2 * c) * np.identity(size-1)
+    for i in range(1, size-1):
         A[i][i-1] = -1
         A[i-1][i] = -1
     return A
-
-
-def create_restriction_matrix(size):
-    d = np.ones(size)
-    d_low = 2*np.ones()
-    return np.diag(d,)(size, size//2, k=2, )
 
 
 def create_coarsening_matrix(h):
@@ -58,10 +55,26 @@ def create_prolongation_matrix(h):
     return 2 * np.transpose(create_coarsening_matrix(h))
 
 
-def u_sol(x): return np.exp(x)*(1-x)
+def analytical_solution(x):
+    """Analytical solution for the Helmholtz equation."""
+    return np.exp(x)*(1-x)
 
 
-def f_rhs(c, x): return np.exp(x)*(c-1-c*x-x)
+def f_rhs(c, x, h):
+    """Return the right-hand side of the Helmholtz-problem assuming the analytical solution given
+    in `analytical_solution` given a specific value of c and the given boundary conditions given
+    in `boundary_conditions`.
+
+    Parameters:
+    - c: Constant of the Helmholtz problem
+    - x: Grid vector for the Helmhotz problem with elimination and Von-Neumann boundary conditions
+    - h: Step size
+    """
+    rhs = np.exp(x)*(c + 1 + x - c*x)
+    alpha, beta = boundary_conditions()
+    rhs[0] += alpha/h**2
+    rhs[-1] += beta/h**2
+    return rhs
 
 
 def conjugate_gradient_with_ritz(A, b, max_iter=100, tol=1e-8):
@@ -107,7 +120,8 @@ def conjugate_gradient_with_ritz(A, b, max_iter=100, tol=1e-8):
     return x, ritz_values
 
 
-def return_boundary_values():
+def boundary_conditions():
+    """Return the boundary conditions alpha, beta = 1, 0."""
     alpha = 1
     beta = 0
     return alpha, beta
@@ -115,7 +129,7 @@ def return_boundary_values():
 
 if __name__ == "__main__":
     # Example usage:
-    A = create_discretized_diffusion_equation_matrix(2)
+    A = create_discretized_helmholtz_matrix(2)
 
     A = np.diag(np.linspace(1, 5, 10))  # Symmetric positive definite matrix
     b = np.ones(10)  # Right-hand side vector
