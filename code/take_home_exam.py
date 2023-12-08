@@ -1,6 +1,8 @@
 
 import numpy as np
-import scipy.linalg as la
+import scipy.linalg as scla
+import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 
 
 def create_discretized_helmholtz_matrix(size=10, c=0.1):
@@ -127,12 +129,127 @@ def boundary_conditions():
     return alpha, beta
 
 
+# Exercise 2
+def create_gauss_seidel_error_propagation_matrix(A):
+    M_gs = np.tril(A, 0)  # get lower triangle with diagonal
+    F = np.triu(A, 1)  # get upper triangle without diagonal
+    # M_gs_inv = scla.lapack.dtrtri(M_gs)
+    M_gs_inv = np.linalg.inv(M_gs)
+    B_gs = np.eye(A.shape[0]) - np.matmul(M_gs_inv, A)
+    eigvals_B_gs = np.linalg.eigvals(B_gs)
+
+    # print("Eigenvalues:")
+    # print(eigvals_B_gs)
+
+    spectral_radius = np.max(np.abs(eigvals_B_gs))
+    print("spectral radius:\n", spectral_radius)
+
+    return eigvals_B_gs, spectral_radius
+
+
+def experiments_exercise_2():
+    c_values = [0.01, 0.1, 1, 10]
+    # c_values = [0.01, 0.1, 10]
+    sizes = [10, 100, 1000]
+    colors = cm.rainbow(np.linspace(0, 1, len(c_values)*len(sizes)))
+    spectral_rads = dict()
+    for i, c_ in enumerate(c_values):
+        for j, size in enumerate(sizes):
+            A = create_discretized_helmholtz_matrix(size, c_)
+            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+                A)
+            spectral_rads[(c_, size)] = spectral_rad
+            # Plot the numerical and analytical solutions
+            plt.scatter(np.real(eigvals), np.imag(eigvals),
+                        label=f'h = {1/size:.1E}, c = {c_:.1E})',
+                        color=colors[i*len(sizes)+j], facecolors='none')
+
+    plt.xlabel('Real part')
+    plt.ylabel('Imag part')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure()
+    c_values = [1]
+    # c_values = [0.01, 0.1, 10]
+    sizes = [10, 100, 1000]
+    colors = cm.rainbow(np.linspace(0, 1, len(c_values)*len(sizes)))
+    spectral_rads = dict()
+    for i, c_ in enumerate(c_values):
+        for j, size in enumerate(sizes):
+            A = create_discretized_helmholtz_matrix(size, c_)
+            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+                A)
+            spectral_rads[(c_, size)] = spectral_rad
+            # Plot the numerical and analytical solutions
+            plt.scatter(np.real(eigvals), np.imag(eigvals),
+                        label=f'h = {1/size:.1E}, c = {c_:.1E})',
+                        color=colors[i*len(sizes)+j], facecolors='none')
+
+    plt.xlabel('Real part')
+    plt.ylabel('Imag part')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+    plt.figure()
+    c_values = [0.1, 1, 10, 100, 1000]
+    # c_values = [0.01, 0.1, 10]
+    sizes = [1000]
+    colors = cm.rainbow(np.linspace(0, 1, len(c_values)*len(sizes)))
+    spectral_rads = dict()
+    for i, c_ in enumerate(c_values):
+        for j, size in enumerate(sizes):
+            A = create_discretized_helmholtz_matrix(size, c_)
+            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+                A)
+            spectral_rads[(c_, size)] = spectral_rad
+            # Plot the numerical and analytical solutions
+            plt.scatter(np.real(eigvals), np.imag(eigvals),
+                        label=f'h = {1/size:.1E}, c = {c_:.1E})',
+                        color=colors[i*len(sizes)+j], facecolors='none')
+
+    plt.xlabel('Real part')
+    plt.ylabel('Imag part')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def gauss_seidel_solver(A, rhs, tol=1e-5, num_iterations=20000):
+    M_gs = np.tril(A, 0)  # get lower triangle with diagonal
+    F = np.triu(A, 1)  # get upper triangle without diagonal
+    u_sol = np.zeros(A.shape[1])
+    u_sol_old = np.copy(u_sol)
+
+    residual = rhs - A @ u_sol
+    rhs_norm = np.linalg.norm(rhs)
+    counter = 0
+    # choice of stopping criterion p. 82
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < num_iterations:
+        for i in range(u_sol.shape[0]):
+            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
+            # indices out of bounds correctly return empty arrays
+            u_sol[i] -= np.dot(A[i, i+1:], u_sol_old[i+1:])
+            u_sol[i] /= A[i, i]
+            u_sol_old[i] = u_sol[i]
+        residual = rhs - A @ u_sol
+        counter += 1
+
+    if counter >= num_iterations:
+        raise ValueError(
+            f"GS solver did not converge after {num_iterations} iterations")
+
+    return u_sol
+
+
 if __name__ == "__main__":
     # Example usage:
-    A = create_discretized_helmholtz_matrix(2)
+    A = create_discretized_helmholtz_matrix(5, 0.1)
 
-    A = np.diag(np.linspace(1, 5, 10))  # Symmetric positive definite matrix
-    b = np.ones(10)  # Right-hand side vector
+    # A = np.diag(np.linspace(1, 5, 10))  # Symmetric positive definite matrix
+    # b = np.ones(10)  # Right-hand side vector
 
     # solution, ritz_values = conjugate_gradient_with_ritz(A, b)
 
@@ -141,10 +258,17 @@ if __name__ == "__main__":
     # print("Ritz Values:", ritz_values)
 
     # Example usage:
-    h = 8
-    coarsening_matrix = create_coarsening_matrix(h)
-    print("Coarsening Matrix:")
-    print(4*coarsening_matrix)
-    prolongation_matrix = create_prolongation_matrix(h)
-    print("Prolongation Matrix:")
-    print(2*prolongation_matrix)
+    # h = 8
+    # coarsening_matrix = create_coarsening_matrix(h)
+    # print("Coarsening Matrix:")
+    # print(4*coarsening_matrix)
+    # prolongation_matrix = create_prolongation_matrix(h)
+    # print("Prolongation Matrix:")
+    # print(2*prolongation_matrix)
+
+    # A = create_discretized_helmholtz_matrix(5, 0)
+    # print("A:\n", A)
+    # create_gauss_seidel_error_propagation_matrix(A)
+
+    # Exercise 02
+    experiments_exercise_2()

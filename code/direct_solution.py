@@ -1,11 +1,11 @@
 import numpy as np
-from take_home_exam import f_rhs, analytical_solution, create_discretized_helmholtz_matrix
+from take_home_exam import create_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix, gauss_seidel_solver
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 
-def helmholtz_solver(size, h, c):
+def helmholtz_direct_solver(size, h, c):
     """
     Solve the Helmholtz equation using finite differences.
 
@@ -26,7 +26,7 @@ def helmholtz_solver(size, h, c):
         raise ValueError("Sizes do not match. A:", A.shape, " x:", x.size)
 
     # Discretized Helmholtz equation: A*u = f
-    f = f_rhs(c=0.1, x=x, h=h)
+    f = f_rhs(c=c, x=x, h=h)
 
     # Solve for u
     u = np.linalg.solve(A / h**2, f)
@@ -39,16 +39,60 @@ def calculate_rmse(approximate, exact):
     return np.sqrt(np.mean((approximate - exact)**2))
 
 
-if __name__ == "__main__":
+def plot_all():
+    # Parameters
+    grid_sizes = [10, 100]  # Example grid sizes
+    plt.figure(figsize=(12, 8))
+    c = 10
+
+    for grid_size in grid_sizes:
+        h = 1/grid_size
+        x = np.linspace(0, 1, grid_size+1)
+        x = x[1:-1]
+
+        # Solve the Helmholtz equation
+        u, _ = helmholtz_direct_solver(grid_size, h, c=c)
+
+        A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
+        rhs = f_rhs(c, x, h)
+        u_gs = gauss_seidel_solver(A / h**2, rhs)
+
+        # Compute the analytical solution
+        u_exact = analytical_solution(x)
+
+        # Compute and print the RMSE
+        rmse = calculate_rmse(u, u_exact)
+        rmse_gs = calculate_rmse(u, u_gs)
+        print(f'RMSE for h = {h}: {rmse:.2E}')
+        # Plot the numerical and analytical solutions
+        plt.plot(x, u, label=f'Direct (h = {h}), rmse: {rmse:.2E}')
+        plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
+
+        # eigenvalues and spectral radius
+        _ = create_gauss_seidel_error_propagation_matrix(A)
+
+    # Only plot the last exact solution
+    plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
+    # Finalize the plot
+    plt.title('Helmholtz Equation: Numerical vs Analytical Solutions')
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def plot_direct_solver():
     # Parameters
     grid_sizes = [10, 100, 1000]  # Example grid sizes
     plt.figure(figsize=(12, 8))
+    c = 0.1
 
     for grid_size in grid_sizes:
         h = 1/grid_size
 
         # Solve the Helmholtz equation
-        u, x = helmholtz_solver(grid_size, h, c=0.1)
+        u, x = helmholtz_direct_solver(grid_size, h, c=c)
 
         # Compute the analytical solution
         u_exact = analytical_solution(x)
@@ -68,3 +112,7 @@ if __name__ == "__main__":
     plt.legend()
     plt.grid(True)
     plt.show()
+
+
+if __name__ == "__main__":
+    plot_all()
