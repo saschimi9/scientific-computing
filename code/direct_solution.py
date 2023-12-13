@@ -55,7 +55,7 @@ def plot_all():
 
         A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
         rhs = f_rhs(c, x, h)
-        u_gs = gauss_seidel_solver(A / h**2, rhs)
+        u_gs, rel_errors = gauss_seidel_solver(A / h**2, rhs)
 
         # Compute the analytical solution
         u_exact = analytical_solution(x)
