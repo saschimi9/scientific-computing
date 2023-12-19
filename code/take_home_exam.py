@@ -1,8 +1,8 @@
 
 import numpy as np
-import scipy.linalg as scla
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
+import helmholtz_solvers
 
 
 def create_discretized_helmholtz_matrix(size=10, c=0.1):
@@ -79,49 +79,6 @@ def f_rhs(c, x, h):
     return rhs
 
 
-def conjugate_gradient_with_ritz(A, b, max_iter=100, tol=1e-8):
-    """
-    Conjugate Gradient algorithm with Ritz value computation for a one-dimensional problem.
-
-    Parameters:
-    - A: Symmetric positive definite matrix (1D array representing the diagonal elements).
-    - b: Right-hand side vector.
-    - max_iter: Maximum number of iterations.
-    - tol: Tolerance for convergence.
-
-    Returns:
-    - x: Solution vector.
-    - ritz_values: List of Ritz values computed at each iteration.
-    """
-
-    n = len(b)
-    x = np.zeros(n)  # Initial guess
-    r = b - np.diag(A) * x
-    p = r.copy()
-    r_norm = np.linalg.norm(r, ord=2)
-    T_k = np.array(r_norm)
-    ritz_values = []
-
-    for k in range(max_iter):
-        Ap = np.diag(A) * p
-        alpha = np.dot(r, r) / np.dot(p, Ap)
-        x = x + alpha * p
-        r_new = r - alpha * Ap
-
-        # Compute the Ritz value
-        ritz_value = np.dot(r_new, r_new) / np.dot(r, r)
-        ritz_values.append(ritz_value)
-
-        if np.linalg.norm(r_new) < tol:
-            break
-
-        beta = np.dot(r_new, r_new) / np.dot(r, r)
-        p = r_new + beta * p
-        r = r_new
-
-    return x, ritz_values
-
-
 def boundary_conditions():
     """Return the boundary conditions alpha, beta = 1, 0."""
     alpha = 1
@@ -129,127 +86,50 @@ def boundary_conditions():
     return alpha, beta
 
 
-def gauss_seidel_solver(A, rhs, tol=1e-5, num_iterations=10000):
-    M_gs = np.tril(A, 0)  # get lower triangle with diagonal
-    F = np.triu(A, 1)  # get upper triangle without diagonal
-    u_sol = np.zeros(A.shape[1])
-    u_sol_old = np.copy(u_sol)
-    u_sol_min_1 = np.copy(u_sol)
-    u_sol_min_2 = np.copy(u_sol) + tol  # prevent division by zero
-
-    residual = rhs - A @ u_sol
-    rhs_norm = np.linalg.norm(rhs)
-    counter = 0
-    rel_errors = []
-    convergence_flag = False
-
-    # choice of stopping criterion p. 82
-    while np.linalg.norm(residual)/rhs_norm > tol and counter < num_iterations:
-        for i in range(u_sol.shape[0]):
-            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
-            # indices out of bounds correctly return empty arrays
-            u_sol[i] -= np.dot(A[i, i+1:], u_sol_min_1[i+1:])
-            u_sol[i] /= A[i, i]
-            u_sol_old[i] = u_sol[i]
-
-        rel_errors.append(np.abs(np.linalg.norm(u_sol - u_sol_min_1) /
-                                 np.linalg.norm(u_sol_min_1 - u_sol_min_2)))
-        u_sol_min_2 = np.copy(u_sol_min_1)
-        u_sol_min_1 = np.copy(u_sol)
-        residual = rhs - A @ u_sol
-        counter += 1
-
-    if counter >= num_iterations:
-        print(
-            f"GS solver did not converge after {num_iterations} iterations")
-    if np.linalg.norm(residual)/rhs_norm <= tol:
-        convergence_flag = True
-
-    return u_sol, rel_errors, convergence_flag
-
-
 def is_symmetric(A):
     return np.allclose(A, np.transpose(A), rtol=1e-5, atol=1e-5)
 
 
-def ssor_solver(A, rhs, tol=1e-5, omega=1, num_iterations=10000):
-    """Symmetric successive overrelaxation with parameter.
+def compute_symmetric_ssor_preconditioner(A, omega):
+    """Return the preconditioning matrix M_SGS(w) for the symmetric successive over relaxation (SSOR)
+    with parameter $\omega$. The matrix would need to be inverted before being applied to the system
+    matrix.
 
     Args:
-        A (np.array_like): System matrix NxN
-        rhs (np.array_like): Right-hand side of the problem Nx1
-        tol (float, optional): Tolerance for the stopping criterion. Defaults to 1e-5.
-        omega (float, optional): Relaxation parameter. Defaults to 1.
-        num_iterations (int, optional): Maximum number of iterations. Defaults to 10000.
+        A (np.ndarray): System matrix NxN
+        omega (float): Overrelaxation parameter. Setting it to 1 leads to Symmetric Gauss-Seidel
+        precondioning
     """
-    D = np.diag(A)
-    D_inv = np.reciprocal(D)
-    E = np.tril(A, 1)  # get lower triangle without diagonal
-    F = np.triu(A, 1)  # get upper triangle without diagonal
+    if not is_symmetric(A):
+        raise TypeError(
+            f"System matrix is not symmetric A[0:2,0:2]: {A[0:2,0:2]}")
+    D = np.diag(A)  # return 1-D array
+    D_inv = np.reciprocal(D)  # element-wise inverse
+    D = np.diag(D)  # create 2-D matrix
+    E = np.tril(A, k=-1)  # get lower triangle without diagonal
+    F = np.triu(A, k=1)  # get upper triangle without diagonal
 
     M_ssor = 1/(omega*(2 - omega)) * (D - omega * F) * D_inv * (D - omega * E)
-    # check if M_ssor is symmetric if A is symmetric
-    if is_symmetric(A):
-        if not is_symmetric(M_ssor):
-            raise ValueError("Some computation is wrong.")
-    else:
-        raise TypeError("A is not symmetric.")
-
-    u_sol = np.zeros(A.shape[1])
-    sigma = np.zeros(A.shape[1])
-
-    residual = rhs - A @ u_sol
-    rhs_norm = np.linalg.norm(rhs)
-    counter = 0
-    rel_errors = []
-    convergence_flag = False
-
-    while np.linalg.norm(residual)/rhs_norm > tol and counter < num_iterations:
-        # Forward sweep
-        for i in range(u_sol.shape[0]):
-            sigma[i] = u_sol[i]
-            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
-            u_sol[i] -= np.dot(A[i, i+1:], u_sol[i+1:])
-            u_sol /= A[i, i]
-            u_sol = omega * u_sol[i] + (1 - omega) * sigma[i]
-        # Backward sweep
-        for i in reversed(range(u_sol.shape[0])):
-            sigma[i] = u_sol[i]
-            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
-            u_sol[i] -= np.dot(A[i, i+1:], u_sol[i+1:])
-            u_sol /= A[i, i]
-            u_sol = omega * u_sol[i] + (1 - omega) * sigma[i]
-        residual = rhs - A @ u_sol
-        counter += 1
-
-    if counter >= num_iterations:
-        print(
-            f"SSOR solver did not converge after {num_iterations} iterations with omega {omega}.")
-    if np.linalg.norm(residual)/rhs_norm <= tol:
-        convergence_flag = True
-
-    return u_sol, rel_errors, convergence_flag
+    return M_ssor
 
 
-def compute_condition_number(A):
+def compute_condition_numbers(A):
     # Exercise 5
-    omega = 1
-    D = np.diag(A)
-    D_inv = np.reciprocal(D)
-    E = np.tril(A)  # get lower triangle without diagonal
-    F = np.triu(A)  # get upper triangle without diagonal
-
-    M_ssor = 1/(omega*(2 - omega)) * (D - omega * F) * D_inv * (D - omega * E)
+    M_ssor = compute_symmetric_ssor_preconditioner(A, 1.0)
     prec_operator = np.linalg.inv(M_ssor) * A
+    if is_symmetric(A):
+        eig_vals = np.linalg.eigvals(A)
+        condition_number_A = np.max(np.abs(eig_vals))/np.min(np.abs(eig_vals))
     if is_symmetric(prec_operator):
-        eig_vals = np.linalg.eigvals(M_ssor)
+        eig_vals = np.linalg.eigvals(prec_operator)
         # Condition number of symmetric matrices can be computed using absolute values
         # of the maximum and minimum eigenvalue.
-        condition_number = np.max(np.abs(eig_vals))/np.min(np.abs(eig_vals))
+        condition_number_prec_operator = np.max(
+            np.abs(eig_vals))/np.min(np.abs(eig_vals))
     else:
         raise TypeError(
-            "Input A or M_ssor are not symmetric and thus inv(M_ssor)*A is not symmetric")
-    return condition_number
+            "Input A is not symmetric and thus inv(M_ssor)*A is not symmetric")
+    return condition_number_A, condition_number_prec_operator
 
 
 def create_gauss_seidel_error_propagation_matrix(A):
@@ -362,7 +242,7 @@ def experiments_exercise_4():
                 _, spectral_rad = create_gauss_seidel_error_propagation_matrix(
                     A)
                 rhs = f_rhs(c, x, h)
-                u_sol, rel_errors, convergence_flag = gauss_seidel_solver(
+                u_sol, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
                     A, rhs)
                 if convergence_flag:
                     lines = [f"(c, h) = ({c}, {h})\n",
@@ -389,8 +269,9 @@ def experiments_exercise_5():
             for grid_size in grid_sizes:
                 h = 1/grid_size
                 A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
-                condition_number = compute_condition_number(A)
-                line = f"(c, h) = ({c}, {h}) condition num.: {condition_number}\n"
+                condition_number_A, condition_number_prec_operator = compute_condition_numbers(
+                    A)
+                line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
                 f.write(line)
 
 
