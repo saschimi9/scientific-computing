@@ -1,5 +1,5 @@
 import numpy as np
-from take_home_exam import create_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix, gauss_seidel_solver
+from take_home_exam import create_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix
 
 import numpy as np
 import matplotlib.pyplot as plt

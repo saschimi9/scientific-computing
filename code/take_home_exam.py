@@ -143,6 +143,27 @@ def create_gauss_seidel_error_propagation_matrix(A):
     return eigvals_B_gs, spectral_radius
 
 
+def compute_series_of_ritz_values(ritz_values):
+    """Restructure the Ritz values provided by a Prec. CG method
+    into a list of Ritz values that should converge to the eigen
+    values of the system matrix if the solver converged.
+
+    Args:
+        ritz_values (list of np.ndarray): List of Ritz values per iteration,
+        k-th np.ndarray contains Ritz values of the k-th iteration.
+
+    Returns:
+        list of lists: i-th entry contains i elements of a sequence of the
+        same ritz value
+    """
+    series_of_ritz_values = []
+    for ritz_values_ith_iter in ritz_values:
+        series_of_ritz_values.append([])
+        for j, ritz_value in enumerate(ritz_values_ith_iter):
+            series_of_ritz_values[j].append(ritz_value)
+    return series_of_ritz_values
+
+
 def experiments_exercise_2_3():
     figsize = (15, 8)
     c_values = [0.01, 0.1, 1, 10]
