@@ -148,7 +148,7 @@ def conjugate_gradient_with_ritz(A, f, max_iterations=100, tol=1e-8, ritz_values
     return x, ritz_values
 
 
-def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations=5000, tol=1e-8, ritz_values=None):
+def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations=5000, tol=1e-8, ritz_values=None, residuals=None):
     """
     Conjugate Gradient algorithm with Ritz value computation for a one-dimensional problem.
 
@@ -158,7 +158,8 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
     - M_inv: Inverted preconditioning matrix
     - max_iterations: Maximum number of iterations.
     - tol: Tolerance for convergence.
-    - ritz_values: Empty vector for Ritz values.
+    - ritz_values: Empty list for Ritz values.
+    - residual: Empty list for residuals.
 
     Returns:
     - u_sol: Solution vector.
@@ -176,14 +177,15 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
     scp_old = 0
     rhs_norm = np.linalg.norm(f, ord=2)
     residual = f.copy()
-    residual_vectors = [residual]
+    if residuals is not None:
+        residuals.append([residual])
 
     R_k_vectors = [residual/rhs_norm]
     T_k_matrices = [R_k_vectors[0].T @ A @ R_k_vectors[0]]  # R_k^T @ A @ R_k
     assert np.isscalar(T_k_matrices[0])  # should be k x N x N x k == 1
 
     if ritz_values is not None:
-        ritz_values.append(T_k_matrices[0])
+        ritz_values.append([T_k_matrices[0]])
 
     while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
         z_sol = M_inv @ residual
@@ -200,7 +202,8 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
         u_sol = u_sol + alpha_k * p_sol
         residual = residual - alpha_k * prod_A_p_sol
 
-        residual_vectors.append(residual)
+        if residuals is not None:
+            residuals.append(residual)
         R_k_vectors.append(residual/np.linalg.norm(residual, ord=2))
         counter += 1
 

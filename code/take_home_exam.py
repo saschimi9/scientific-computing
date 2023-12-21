@@ -105,31 +105,23 @@ def compute_symmetric_ssor_preconditioner(A, omega):
             f"System matrix is not symmetric A[0:2,0:2]: {A[0:2,0:2]}")
     D = np.diag(A)  # return 1-D array
     D_inv = np.reciprocal(D)  # element-wise inverse
+    D_inv = np.diag(D_inv)
     D = np.diag(D)  # create 2-D matrix
-    E = np.tril(A, k=-1)  # get lower triangle without diagonal
-    F = np.triu(A, k=1)  # get upper triangle without diagonal
+    E = -np.tril(A, k=-1)  # get lower triangle without diagonal
+    F = -np.triu(A, k=1)  # get upper triangle without diagonal
 
-    M_ssor = 1/(omega*(2 - omega)) * (D - omega * F) * D_inv * (D - omega * E)
+    M_ssor = 1/(omega*(2 - omega)) * (D - omega * E) @ D_inv @ (D - omega * F)
     return M_ssor
 
 
-def compute_condition_numbers(A):
-    # Exercise 5
-    M_ssor = compute_symmetric_ssor_preconditioner(A, 1.0)
-    prec_operator = np.linalg.inv(M_ssor) * A
+def compute_condition_number(A):
     if is_symmetric(A):
         eig_vals = np.linalg.eigvals(A)
         condition_number_A = np.max(np.abs(eig_vals))/np.min(np.abs(eig_vals))
-    if is_symmetric(prec_operator):
-        eig_vals = np.linalg.eigvals(prec_operator)
-        # Condition number of symmetric matrices can be computed using absolute values
-        # of the maximum and minimum eigenvalue.
-        condition_number_prec_operator = np.max(
-            np.abs(eig_vals))/np.min(np.abs(eig_vals))
     else:
         raise TypeError(
             "Input A is not symmetric and thus inv(M_ssor)*A is not symmetric")
-    return condition_number_A, condition_number_prec_operator
+    return condition_number_A
 
 
 def create_gauss_seidel_error_propagation_matrix(A):
@@ -290,15 +282,70 @@ def experiments_exercise_5():
             for grid_size in grid_sizes:
                 h = 1/grid_size
                 A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
-                condition_number_A, condition_number_prec_operator = compute_condition_numbers(
+                condition_number_A,  = compute_condition_number(
                     A)
+                M_ssor = compute_symmetric_ssor_preconditioner(A, 1.0)
+                prec_operator = np.linalg.inv(M_ssor) * A
+                condition_number_prec_operator = np.linalg.cond(
+                    prec_operator)
                 line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
                 f.write(line)
 
 
+def experiments_exercise_6():
+    c_values = [0.01, 0.1, 1, 10, 100, 1000]
+    # c_values = [0.1]
+    grid_sizes = [1000]
+
+    fig = plt.figure(figsize=(16, 8))
+
+    for c in c_values:
+        for grid_size in grid_sizes:
+            residuals_uncond = []
+            residuals = []
+            ritz_values = []
+            h = 1/grid_size
+            x = np.linspace(0, 1, grid_size+1)
+            x = x[1:-1]
+            A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
+            rhs = f_rhs(c, x, h)
+
+            M_sgs = compute_symmetric_ssor_preconditioner(A, omega=1.0)
+            M_sgs_inv = np.linalg.inv(M_sgs)
+
+            # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+            #     A, rhs, residuals=residuals_uncond)
+            u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+                A, f=rhs, M_inv=M_sgs_inv, ritz_values=ritz_values, residuals=residuals)
+            # sequence_of_ritz_values = compute_series_of_ritz_values(
+            #     ritz_values)
+            # cond_a = compute_condition_number(A)
+            cond_A = compute_condition_number(A)
+            cond_prec = np.linalg.cond(M_sgs_inv @ A)
+            print(cond_A, cond_prec)
+
+            # plt.plot(
+            #     [np.linalg.norm(residual, ord=2)
+            #      for residual in residuals_uncond],
+            #     label=f"CG: $(c,h)=({c}, {h}), \kappa_2={cond_prec:.2E}$")
+            plt.plot(
+                [np.linalg.norm(residual, ord=2) for residual in residuals],
+                label=f"PCG: $(c,h)=({c}, {h}), \kappa_2={cond_prec:.2E}$")
+
+    plt.xlabel('# iterations')
+    plt.ylabel('2-norm of residual')
+    plt.legend()
+    plt.semilogy()
+    plt.grid(True)
+    plt.show()
+    # plt.show()
+    # fig.savefig("figures/plot_ex_6_convergence.pdf")
+    # fig.savefig("figures/plot_ex_6_convergence.svg")
+
+
 if __name__ == "__main__":
     # Example usage:
-    A = create_discretized_helmholtz_matrix(5, 0.1)
+    # A = create_discretized_helmholtz_matrix(5, 0.1)
 
     # A = np.diag(np.linspace(1, 5, 10))  # Symmetric positive definite matrix
     # b = np.ones(10)  # Right-hand side vector
@@ -325,4 +372,8 @@ if __name__ == "__main__":
     # Exercise 02, 03
     # experiments_exercise_2_3()
     # Exercise 04
-    experiments_exercise_5()
+    # experiments_exercise_4()
+    # Exercise 05
+    # experiments_exercise_5()
+    # Exercise 06
+    experiments_exercise_6()
