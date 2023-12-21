@@ -338,9 +338,9 @@ def experiments_exercise_6():
     plt.semilogy()
     plt.grid(True)
     plt.show()
-    # plt.show()
-    # fig.savefig("figures/plot_ex_6_convergence.pdf")
-    # fig.savefig("figures/plot_ex_6_convergence.svg")
+    plt.show()
+    fig.savefig("figures/plot_ex_6_convergence.pdf")
+    fig.savefig("figures/plot_ex_6_convergence.svg")
 
 
 if __name__ == "__main__":
