@@ -161,3 +161,14 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
         convergence_flag = True
 
     return u_sol, convergence_flag
+
+
+def coarse_grid_correction(A_h, rhs, max_iterations=5000, tol=1e-8, residuals=None):
+    counter = 0
+    convergence_flag = False
+    n = len(rhs)
+    residual = rhs.copy()
+    rhs_norm = np.linalg.norm(rhs, ord=2)
+
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
+        counter += 1

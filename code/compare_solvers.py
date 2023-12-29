@@ -1,5 +1,5 @@
 import numpy as np
-from take_home_exam import create_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix, compute_symmetric_ssor_preconditioner
+from take_home_exam import f_rhs, analytical_solution, create_discretized_helmholtz_matrix, compute_symmetric_ssor_preconditioner
 import helmholtz_solvers
 import direct_solution
 

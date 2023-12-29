@@ -9,7 +9,7 @@ import compare_solvers
 
 def create_discretized_helmholtz_matrix(size=10, c=0.1):
     """Setup and return the system matrix A^h with the form tridiag[-1, 2+h^2c, -1]
-    where h = 1/size and the size of the matrix is (size - 1) x (size - 1)
+    where h = 1/size and the size of the matrix is (size - 2) x (size - 2)
     """
     h = 1/size
     A = (2 + h**2 * c) * np.identity(size-1)
@@ -31,7 +31,7 @@ def create_coarsening_matrix(size):
     """
     if size % 2 != 0:
         raise ValueError("The size of the finer grid 'size' should be even.")
-    size_fine = size+1
+    size_fine = size-1
     size_coarse = size_fine // 2
 
     coarsening_matrix = np.zeros((size_coarse, size_fine))
@@ -132,15 +132,28 @@ def compute_condition_number(A):
     return condition_number_A
 
 
-def create_gauss_seidel_error_propagation_matrix(A):
-    M_gs = np.tril(A, 0)  # get lower triangle with diagonal
-    F = np.triu(A, 1)  # get upper triangle without diagonal
+def compute_eigenvals_gauss_seidel_error_propagation_matrix(A_h):
+    M_gs = np.tril(A_h, 0)  # get lower triangle with diagonal
+    F = np.triu(A_h, 1)  # get upper triangle without diagonal
     M_gs_inv = np.linalg.inv(M_gs)
-    B_gs = np.eye(A.shape[0]) - np.matmul(M_gs_inv, A)
+    B_gs = np.eye(A_h.shape[0]) - np.matmul(M_gs_inv, A_h)
     eigvals_B_gs = np.linalg.eigvals(B_gs)
     spectral_radius = np.max(np.abs(eigvals_B_gs))
 
     return eigvals_B_gs, spectral_radius
+
+
+def create_coarse_grid_correction_error_propagation_matrix(A_h):
+    I_toFine = create_prolongation_matrix(A_h.shape[0]+1)
+    I_toCoarse = create_coarsening_matrix(A_h.shape[0]+1)
+    A_H = I_toCoarse @ A_h @ I_toFine
+    A_H_inv = np.linalg.inv(A_H)
+
+    M_cgc_inv = I_toFine @ A_H_inv @ I_toCoarse
+
+    B_cgc = np.eye(A_h.shape[0]) - M_cgc_inv @ A_h
+
+    return B_cgc
 
 
 def compute_series_of_ritz_values(sys_mat, residuals):
@@ -191,7 +204,7 @@ def experiments_exercise_2_3():
     for i, c_ in enumerate(c_values):
         for j, size in enumerate(grid_sizes):
             A = create_discretized_helmholtz_matrix(size, c_)
-            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+            eigvals, spectral_rad = compute_eigenvals_gauss_seidel_error_propagation_matrix(
                 A)
             spectral_rads.append((c_, size, spectral_rad))
             # Plot the numerical and analytical solutions
@@ -216,7 +229,7 @@ def experiments_exercise_2_3():
     for i, c_ in enumerate(c_values):
         for j, size in enumerate(grid_sizes):
             A = create_discretized_helmholtz_matrix(size, c_)
-            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+            eigvals, spectral_rad = compute_eigenvals_gauss_seidel_error_propagation_matrix(
                 A)
             spectral_rads.append((c_, size, spectral_rad))
             # Plot the numerical and analytical solutions
@@ -241,7 +254,7 @@ def experiments_exercise_2_3():
     for i, c_ in enumerate(c_values):
         for j, size in enumerate(grid_sizes):
             A = create_discretized_helmholtz_matrix(size, c_)
-            eigvals, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+            eigvals, spectral_rad = compute_eigenvals_gauss_seidel_error_propagation_matrix(
                 A)
             spectral_rads.append((c_, size, spectral_rad))
             # Plot the numerical and analytical solutions
@@ -277,7 +290,7 @@ def experiments_exercise_4():
                 x = np.linspace(0, 1, grid_size+1)
                 x = x[1:-1]
                 A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
-                _, spectral_rad = create_gauss_seidel_error_propagation_matrix(
+                _, spectral_rad = compute_eigenvals_gauss_seidel_error_propagation_matrix(
                     A)
                 rhs = f_rhs(c, x, h)
                 u_sol, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
@@ -372,14 +385,12 @@ def experiments_exercise_6():
 
 
 def experiments_exercise_7():
-    # seed = 45322434573290802
-
     c = 1000
     grid_size = 1000
 
     residuals = []
     h = 1/grid_size
-    x = np.linspace(0, 1, grid_size+1)
+    x = np.linspace(0, 1, grid_size)
     x = x[1:-1]
     A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
     rhs = f_rhs(c, x, h)
@@ -430,6 +441,63 @@ def experiments_exercise_7():
     fig.savefig("figures/plot_ex_7_ritz_values.svg")
 
 
+def experiments_exercise_8_9():
+    c_values = [0.1, 1, 10, 100, 1000]
+    grid_sizes = [100, 1000]
+    colors = cm.viridis(np.linspace(0, 1, len(c_values)*len(grid_sizes)))
+
+    fig = plt.figure()
+    spectral_rads = []
+    for i, c_ in enumerate(c_values):
+        for j, size in enumerate(grid_sizes):
+            h = 1/size
+            x = np.linspace(0, 1, size)
+            x = x[1:-1]
+            A_h = create_discretized_helmholtz_matrix(size, c_) / h**2
+            B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+            eigvals_B_cgc = np.linalg.eigvals(B_cgc)
+            spectral_radius = np.max(np.abs(eigvals_B_cgc))
+            spectral_rads.append((c_, size, spectral_radius))
+            # Plot the numerical and analytical solutions
+            plt.scatter(np.real(eigvals_B_cgc), np.imag(eigvals_B_cgc),
+                        label=f'h = {1/size:.1E}, c = {c_:.1E})',
+                        color=colors[i*len(grid_sizes)+j],
+                        s=1)
+
+    plt.xlabel('Real part')
+    plt.ylabel('Imag part')
+    plt.semilogy()
+    plt.legend()
+    plt.show()
+    fig.savefig("figures/plot_ex_8_B_CGC_eigenvalues.pdf")
+    fig.savefig("figures/plot_ex_8_B_CGC_eigenvalues.svg")
+
+    with open("results_ex_8_9.txt", 'w') as f:
+        for (c_, size, spectral_rad) in spectral_rads:
+            line = f"(c,h)=({c_:1E}, {1/size:1E}): rho(B_GS)={spectral_rad})\n"
+            print(line)
+            f.write(line)
+
+
+def experiments_exercise_10():
+    c_values = [0.1, 1, 10, 100, 1000]
+    grid_sizes = [100, 1000]
+    colors = cm.viridis(np.linspace(0, 1, len(c_values)*len(grid_sizes)))
+
+    fig = plt.figure()
+    spectral_rads = []
+    for i, c_ in enumerate(c_values):
+        for j, size in enumerate(grid_sizes):
+            h = 1/size
+            x = np.linspace(0, 1, size)
+            x = x[1:-1]
+            A_h = create_discretized_helmholtz_matrix(size, c_) / h**2
+            B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+            eigvals_B_cgc = np.linalg.eigvals(B_cgc)
+            spectral_radius = np.max(np.abs(eigvals_B_cgc))
+            spectral_rads.append((c_, size, spectral_radius))
+
+
 if __name__ == "__main__":
     # Example usage:
     # A = create_discretized_helmholtz_matrix(5, 0.1)
@@ -452,10 +520,6 @@ if __name__ == "__main__":
     # print("Prolongation Matrix:")
     # print(2*prolongation_matrix)
 
-    # A = create_discretized_helmholtz_matrix(5, 0)
-    # print("A:\n", A)
-    # create_gauss_seidel_error_propagation_matrix(A)
-
     # Exercise 02, 03
     # experiments_exercise_2_3()
     # Exercise 04
@@ -466,4 +530,8 @@ if __name__ == "__main__":
     # experiments_exercise_6()
     # Exercise 07
     # experiments_exercise_7()
-    # Exercise 08
+
+    # Exercise 08, 09
+    # experiments_exercise_8_9()
+    # Exercise 10
+    experiments_exercise_10()

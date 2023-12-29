@@ -1,5 +1,5 @@
 import numpy as np
-from take_home_exam import create_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix
+from take_home_exam import compute_eigenvals_gauss_seidel_error_propagation_matrix, f_rhs, analytical_solution, create_discretized_helmholtz_matrix
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -69,7 +69,7 @@ def plot_all():
         plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
 
         # eigenvalues and spectral radius
-        _ = create_gauss_seidel_error_propagation_matrix(A)
+        _ = compute_eigenvals_gauss_seidel_error_propagation_matrix(A)
 
     # Only plot the last exact solution
     plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
