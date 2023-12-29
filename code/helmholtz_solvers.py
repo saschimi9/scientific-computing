@@ -103,52 +103,7 @@ def ssor_solver(A, rhs, tol=1e-5, omega=1, max_iterations=10000):
     return u_sol, rel_errors, convergence_flag
 
 
-def conjugate_gradient_with_ritz(A, f, max_iterations=100, tol=1e-8, ritz_values=None):
-    """
-    Conjugate Gradient algorithm with Ritz value computation for a one-dimensional problem.
-
-    Parameters:
-    - A: Symmetric positive definite matrix (1D array representing the diagonal elements).
-    - f: Right-hand side vector.
-    - max_iterations: Maximum number of iterations.
-    - tol: Tolerance for convergence.
-
-    Returns:
-    - x: Solution vector.
-    - ritz_values: List of Ritz values computed at each iteration.
-    """
-
-    n = len(f)
-    u_sol = np.zeros(n)  # Initial guess
-    r_sol = f.copy()
-    # M_ssor = compute
-    r = f - np.diag(A) * x
-    p = r.copy()
-    r_norm = np.linalg.norm(r, ord=2)
-    T_k = np.array(r_norm)
-    ritz_values = []
-
-    for k in range(max_iterations):
-        Ap = np.diag(A) * p
-        alpha = np.dot(r, r) / np.dot(p, Ap)
-        x = x + alpha * p
-        r_new = r - alpha * Ap
-
-        # Compute the Ritz value
-        ritz_value = np.dot(r_new, r_new) / np.dot(r, r)
-        ritz_values.append(ritz_value)
-
-        if np.linalg.norm(r_new) < tol:
-            break
-
-        beta = np.dot(r_new, r_new) / np.dot(r, r)
-        p = r_new + beta * p
-        r = r_new
-
-    return x, ritz_values
-
-
-def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations=5000, tol=1e-8, ritz_values=None, residuals=None):
+def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
     """
     Conjugate Gradient algorithm with Ritz value computation for a one-dimensional problem.
 
@@ -158,7 +113,6 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
     - M_inv: Inverted preconditioning matrix
     - max_iterations: Maximum number of iterations.
     - tol: Tolerance for convergence.
-    - ritz_values: Empty list for Ritz values.
     - residual: Empty list for residuals.
 
     Returns:
@@ -178,14 +132,7 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
     rhs_norm = np.linalg.norm(f, ord=2)
     residual = f.copy()
     if residuals is not None:
-        residuals.append([residual])
-
-    R_k_vectors = [residual/rhs_norm]
-    T_k_matrices = [R_k_vectors[0].T @ A @ R_k_vectors[0]]  # R_k^T @ A @ R_k
-    assert np.isscalar(T_k_matrices[0])  # should be k x N x N x k == 1
-
-    if ritz_values is not None:
-        ritz_values.append([T_k_matrices[0]])
+        residuals.append(residual)
 
     while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
         z_sol = M_inv @ residual
@@ -204,16 +151,8 @@ def preconditioned_conjugate_gradient_with_ritz(A, f, M_inv=None, max_iterations
 
         if residuals is not None:
             residuals.append(residual)
-        R_k_vectors.append(residual/np.linalg.norm(residual, ord=2))
-        counter += 1
 
-    # Compute Ritz matrix and values
-    R_k_vectors = np.array(R_k_vectors).T
-    if ritz_values is not None:
-        for i in range(1, len(R_k_vectors)):
-            T_k_matrix = R_k_vectors[:, 0:i].T @ A @ R_k_vectors[:, 0:i]
-            T_k_matrices.append(T_k_matrix)
-            ritz_values.append(np.linalg.eigvals(T_k_matrix))
+        counter += 1
 
     if counter >= max_iterations:
         print(

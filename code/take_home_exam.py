@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import helmholtz_solvers
+import scipy.linalg as sp_la
+import compare_solvers
 
 
 def create_discretized_helmholtz_matrix(size=10, c=0.1):
@@ -17,19 +19,19 @@ def create_discretized_helmholtz_matrix(size=10, c=0.1):
     return A
 
 
-def create_coarsening_matrix(h):
+def create_coarsening_matrix(size):
     """
-    Create a coarsening matrix for a given finer grid size h.
+    Create a coarsening matrix for a given finer grid size size.
 
     Parameters:
-    - h: Size of the finer grid.
+    - size: Size of the finer grid.
 
     Returns:
     - A numpy matrix representing the coarsening matrix.
     """
-    if h % 2 != 0:
-        raise ValueError("The size of the finer grid 'h' should be even.")
-    size_fine = h+1
+    if size % 2 != 0:
+        raise ValueError("The size of the finer grid 'size' should be even.")
+    size_fine = size+1
     size_coarse = size_fine // 2
 
     coarsening_matrix = np.zeros((size_coarse, size_fine))
@@ -49,12 +51,12 @@ def create_coarsening_matrix(h):
     return coarsening_matrix/4
 
 
-def create_prolongation_matrix(h):
+def create_prolongation_matrix(size):
     """
     Uses `create_coarsening_matrix` and returns the transpose of the matrix
     multiplied by 2
     """
-    return 2 * np.transpose(create_coarsening_matrix(h))
+    return 2 * np.transpose(create_coarsening_matrix(size))
 
 
 def analytical_solution(x):
@@ -91,9 +93,8 @@ def is_symmetric(A):
 
 
 def compute_symmetric_ssor_preconditioner(A, omega):
-    """Return the preconditioning matrix M_SGS(w) for the symmetric successive over relaxation (SSOR)
-    with parameter $\omega$. The matrix would need to be inverted before being applied to the system
-    matrix.
+    """Return the preconditioning matrix M_SGS(w)^{-1} for the symmetric successive over relaxation (SSOR)
+    with parameter $\omega$.
 
     Args:
         A (np.ndarray): System matrix NxN
@@ -111,7 +112,14 @@ def compute_symmetric_ssor_preconditioner(A, omega):
     F = -np.triu(A, k=1)  # get upper triangle without diagonal
 
     M_ssor = 1/(omega*(2 - omega)) * (D - omega * E) @ D_inv @ (D - omega * F)
-    return M_ssor
+
+    iden = np.eye(D.shape[0])
+    lower_inv = sp_la.solve_triangular((D - omega * E), iden, lower=True)
+    upper_inv = sp_la.solve_triangular((D - omega * F), iden)
+    M_ssor_inv = (omega*(2 - omega)) * upper_inv @ D @ lower_inv
+    assert np.allclose(M_ssor @ M_ssor_inv, iden)
+
+    return M_ssor_inv
 
 
 def compute_condition_number(A):
@@ -135,19 +143,36 @@ def create_gauss_seidel_error_propagation_matrix(A):
     return eigvals_B_gs, spectral_radius
 
 
-def compute_series_of_ritz_values(ritz_values):
+def compute_series_of_ritz_values(sys_mat, residuals):
     """Restructure the Ritz values provided by a Prec. CG method
     into a list of Ritz values that should converge to the eigen
     values of the system matrix if the solver converged.
 
     Args:
-        ritz_values (list of np.ndarray): List of Ritz values per iteration,
-        k-th np.ndarray contains Ritz values of the k-th iteration.
+        sys_mat (np.ndarray): NxN system matrix
+        residuals (list of np.ndarray): List of residual vectors
 
     Returns:
         list of lists: i-th entry contains i elements of a sequence of the
         same ritz value
     """
+    n_row = len(residuals[0])
+    n_col = len(residuals)
+    r_ks = np.zeros((n_row, n_col))
+    T_k_matrices = []
+    ritz_values = []
+
+    for i, residual in enumerate(residuals):
+        r_k = np.array(residual)
+        r_ks[:, i] = r_k/np.linalg.norm(r_k, ord=2)
+        R_k = r_ks[:, 0:i+1]
+        T_k_matrices.append(R_k.T @ sys_mat @ R_k)  # R_k^T @ M^{-1} @ A @ R_k
+
+    assert T_k_matrices[0].shape == (1, 1)  # "should be k x N x N x k == 1
+
+    for T_k_matrix in T_k_matrices:
+        ritz_values.append(np.linalg.eigvals(T_k_matrix))
+
     series_of_ritz_values = []
     for ritz_values_ith_iter in ritz_values:
         series_of_ritz_values.append([])
@@ -282,10 +307,10 @@ def experiments_exercise_5():
             for grid_size in grid_sizes:
                 h = 1/grid_size
                 A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
-                condition_number_A,  = compute_condition_number(
+                condition_number_A, = compute_condition_number(
                     A)
-                M_ssor = compute_symmetric_ssor_preconditioner(A, 1.0)
-                prec_operator = np.linalg.inv(M_ssor) * A
+                M_ssor_inv = compute_symmetric_ssor_preconditioner(A, 1.0)
+                prec_operator = M_ssor_inv * A
                 condition_number_prec_operator = np.linalg.cond(
                     prec_operator)
                 line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
@@ -307,21 +332,25 @@ def experiments_exercise_6():
             h = 1/grid_size
             x = np.linspace(0, 1, grid_size+1)
             x = x[1:-1]
-            A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
+            A_h = create_discretized_helmholtz_matrix(
+                size=grid_size, c=c) / h**2
             rhs = f_rhs(c, x, h)
 
-            M_sgs = compute_symmetric_ssor_preconditioner(A, omega=1.0)
-            M_sgs_inv = np.linalg.inv(M_sgs)
+            M_sgs_inv = compute_symmetric_ssor_preconditioner(
+                A_h, omega=1.0)
 
             # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
             #     A, rhs, residuals=residuals_uncond)
             u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
-                A, f=rhs, M_inv=M_sgs_inv, ritz_values=ritz_values, residuals=residuals)
-            # sequence_of_ritz_values = compute_series_of_ritz_values(
-            #     ritz_values)
-            # cond_a = compute_condition_number(A)
-            cond_A = compute_condition_number(A)
-            cond_prec = np.linalg.cond(M_sgs_inv @ A)
+                A_h, f=rhs, M_inv=M_sgs_inv, tol=1e-10, residuals=residuals)
+
+            # Check solution
+            u_exact = analytical_solution(x)
+            assert np.isclose(compare_solvers.calculate_rmse(
+                u_sol, u_exact), 0, atol=1e-7)
+
+            cond_A = compute_condition_number(A_h)
+            cond_prec = np.linalg.cond(M_sgs_inv @ A_h)
             print(cond_A, cond_prec)
 
             # plt.plot(
@@ -338,9 +367,67 @@ def experiments_exercise_6():
     plt.semilogy()
     plt.grid(True)
     plt.show()
-    plt.show()
     fig.savefig("figures/plot_ex_6_convergence.pdf")
     fig.savefig("figures/plot_ex_6_convergence.svg")
+
+
+def experiments_exercise_7():
+    # seed = 45322434573290802
+
+    c = 1000
+    grid_size = 1000
+
+    residuals = []
+    h = 1/grid_size
+    x = np.linspace(0, 1, grid_size+1)
+    x = x[1:-1]
+    A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
+    rhs = f_rhs(c, x, h)
+
+    M_sgs_inv = compute_symmetric_ssor_preconditioner(A_h, omega=1.0)
+
+    prec_operator = np.matmul(M_sgs_inv, A_h)
+
+    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+        A_h, f=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)
+    assert convergence_flag  # "Problem did not converge"
+    print("CG done")
+
+    series_of_ritz_values = compute_series_of_ritz_values(
+        M_sgs_inv @ A_h, residuals)
+    prec_operator_eigenvalues = np.linalg.eigvals(prec_operator)
+    print("Compute Ritz values done")
+
+    # Check solution
+    try:
+        u_exact = analytical_solution(x)
+        assert np.isclose(compare_solvers.calculate_rmse(
+            u_sol, u_exact), 0, atol=1e-7)
+    except:
+        compare_solvers.plot_comparison_plot(x, u_exact, u_sol)
+        plt.show()
+
+    fig = plt.figure(figsize=(16, 8))
+    plt.scatter(range(len(
+        series_of_ritz_values[0])),
+        np.abs(prec_operator_eigenvalues[:len(
+            series_of_ritz_values[0])]),
+        label="$\mathrm{eig}(M_{\mathrm{SGS}}^{-1} A)$",
+        s=1)
+    plt.scatter([len(
+        series_of_ritz_values[0])], prec_operator_eigenvalues[-1], label="last $\mathrm{eig}(M_{\mathrm{SGS}}^{-1} A)$",
+        s=5)
+
+    for i, series_of_ritz_value in enumerate(series_of_ritz_values):
+        plt.plot(np.abs(series_of_ritz_value))
+
+    plt.xlabel('# iterations')
+    plt.ylabel('real part')
+    # plt.semilogy()
+    plt.legend()
+    plt.show()
+    fig.savefig("figures/plot_ex_7_ritz_values.pdf")
+    fig.savefig("figures/plot_ex_7_ritz_values.svg")
 
 
 if __name__ == "__main__":
@@ -376,4 +463,7 @@ if __name__ == "__main__":
     # Exercise 05
     # experiments_exercise_5()
     # Exercise 06
-    experiments_exercise_6()
+    # experiments_exercise_6()
+    # Exercise 07
+    # experiments_exercise_7()
+    # Exercise 08

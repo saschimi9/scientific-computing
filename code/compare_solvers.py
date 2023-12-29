@@ -12,6 +12,19 @@ def calculate_rmse(approximate, exact):
     return np.sqrt(np.mean((approximate - exact)**2))
 
 
+def plot_comparison_plot(x, u_exact, u_solver):
+    plt.figure(figsize=(12, 8))
+    # Only plot the last exact solution
+    plt.plot(x, u_solver, label=f'Solver')
+    plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
+    # Finalize the plot
+    plt.title('Helmholtz Equation: Numerical vs Analytical Solutions')
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
+    plt.legend()
+    plt.grid(True)
+
+
 def plot_all():
     # Parameters
     grid_sizes = [10, 100]  # Example grid sizes
@@ -31,8 +44,7 @@ def plot_all():
         u_gs, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
             A / h**2, rhs)
 
-        M_sgs = compute_symmetric_ssor_preconditioner(A/h**2, 1.0)
-        M_sgs_inv = np.linalg.inv(M_sgs)
+        M_sgs_inv = compute_symmetric_ssor_preconditioner(A/h**2, 1.0)
         # M_sgs_inv = np.eye(A.shape[0])
         ritz_values = []
         u_sgs_cg, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
