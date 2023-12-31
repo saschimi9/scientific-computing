@@ -4,19 +4,26 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import helmholtz_solvers
 import scipy.linalg as sp_la
-import compare_solvers
+from helmholtz_problem import create_discretized_helmholtz_matrix, analytical_solution, f_rhs
 
 
-def create_discretized_helmholtz_matrix(size=10, c=0.1):
-    """Setup and return the system matrix A^h with the form tridiag[-1, 2+h^2c, -1]
-    where h = 1/size and the size of the matrix is (size - 2) x (size - 2)
-    """
-    h = 1/size
-    A = (2 + h**2 * c) * np.identity(size-1)
-    for i in range(1, size-1):
-        A[i][i-1] = -1
-        A[i-1][i] = -1
-    return A
+def plot_solutions(x, u_exact, *label_and_solutions):
+    plt.figure(figsize=(12, 8))
+    for label, u_sol in label_and_solutions:
+        plt.plot(x, u_sol, label=label)
+    plt.plot(x, u_exact, label='Analytical', linestyle='dashed')
+    # Finalize the plot
+    plt.title('Helmholtz Equation: Numerical vs Analytical Solutions')
+    plt.xlabel('x')
+    plt.ylabel('u(x)')
+    plt.legend()
+    plt.grid(True)
+    plt.show()
+
+
+def calculate_rmse(approximate, exact):
+    """Calculate the root mean square error (RMSE) between approximate and exact solutions."""
+    return np.sqrt(np.mean((approximate - exact)**2))
 
 
 def create_coarsening_matrix(size):
@@ -57,35 +64,6 @@ def create_prolongation_matrix(size):
     multiplied by 2
     """
     return 2 * np.transpose(create_coarsening_matrix(size))
-
-
-def analytical_solution(x):
-    """Analytical solution for the Helmholtz equation."""
-    return np.exp(x)*(1-x)
-
-
-def f_rhs(c, x, h):
-    """Return the right-hand side of the Helmholtz-problem assuming the analytical solution given
-    in `analytical_solution` given a specific value of c and the given boundary conditions given
-    in `boundary_conditions`.
-
-    Parameters:
-    - c: Constant of the Helmholtz problem
-    - x: Grid vector for the Helmhotz problem with elimination and Von-Neumann boundary conditions
-    - h: Step size
-    """
-    rhs = np.exp(x)*(c + 1 + x - c*x)
-    alpha, beta = boundary_conditions()
-    rhs[0] += alpha/h**2
-    rhs[-1] += beta/h**2
-    return rhs
-
-
-def boundary_conditions():
-    """Return the boundary conditions alpha, beta = 1, 0."""
-    alpha = 1
-    beta = 0
-    return alpha, beta
 
 
 def is_symmetric(A):
@@ -355,11 +333,11 @@ def experiments_exercise_6():
             # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
             #     A, rhs, residuals=residuals_uncond)
             u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
-                A_h, f=rhs, M_inv=M_sgs_inv, tol=1e-10, residuals=residuals)
+                A_h, rhs=rhs, M_inv=M_sgs_inv, tol=1e-10, residuals=residuals)
 
             # Check solution
             u_exact = analytical_solution(x)
-            assert np.isclose(compare_solvers.calculate_rmse(
+            assert np.isclose(calculate_rmse(
                 u_sol, u_exact), 0, atol=1e-7)
 
             cond_A = compute_condition_number(A_h)
@@ -400,7 +378,7 @@ def experiments_exercise_7():
     prec_operator = np.matmul(M_sgs_inv, A_h)
 
     u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
-        A_h, f=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)
+        A_h, rhs=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)
     assert convergence_flag  # "Problem did not converge"
     print("CG done")
 
@@ -410,13 +388,9 @@ def experiments_exercise_7():
     print("Compute Ritz values done")
 
     # Check solution
-    try:
-        u_exact = analytical_solution(x)
-        assert np.isclose(compare_solvers.calculate_rmse(
-            u_sol, u_exact), 0, atol=1e-7)
-    except:
-        compare_solvers.plot_comparison_plot(x, u_exact, u_sol)
-        plt.show()
+    u_exact = analytical_solution(x)
+    assert np.isclose(calculate_rmse(
+        u_sol, u_exact), 0, atol=1e-7)
 
     fig = plt.figure(figsize=(16, 8))
     plt.scatter(range(len(
@@ -481,21 +455,42 @@ def experiments_exercise_8_9():
 
 def experiments_exercise_10():
     c_values = [0.1, 1, 10, 100, 1000]
-    grid_sizes = [100, 1000]
+    c = 1
+
+    grid_sizes = [1000]
     colors = cm.viridis(np.linspace(0, 1, len(c_values)*len(grid_sizes)))
 
-    fig = plt.figure()
-    spectral_rads = []
-    for i, c_ in enumerate(c_values):
-        for j, size in enumerate(grid_sizes):
-            h = 1/size
-            x = np.linspace(0, 1, size)
-            x = x[1:-1]
-            A_h = create_discretized_helmholtz_matrix(size, c_) / h**2
-            B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
-            eigvals_B_cgc = np.linalg.eigvals(B_cgc)
-            spectral_radius = np.max(np.abs(eigvals_B_cgc))
-            spectral_rads.append((c_, size, spectral_radius))
+    h = 1/grid_sizes[0]
+    x = np.linspace(0, 1, grid_sizes[0]+1)
+    x = x[1:-1]
+    A_h = create_discretized_helmholtz_matrix(grid_sizes[0], c) / h**2
+    rhs = f_rhs(c, x, h)
+
+    M_sgs_inv = compute_symmetric_ssor_preconditioner(A_h, omega=1.0)
+
+    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+        A_h, rhs=rhs, M_inv=M_sgs_inv, tol=1e-10)
+    u_sol_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
+        A_h, rhs_h=rhs, max_iterations=100)
+
+    # Check solution
+    u_exact = analytical_solution(x)
+    try:
+        assert np.isclose(calculate_rmse(
+            u_sol, u_exact), 0, atol=1e-7)
+        assert np.isclose(calculate_rmse(
+            u_sol_cgc, u_exact), 0, atol=1e-7)
+    except:
+        solutions = [('CGC', u_sol_cgc)]  # ('CG', u_sol),
+        plot_solutions(x, u_exact, *solutions)
+    # fig = plt.figure()
+    # spectral_rads = []
+    # for i, c_ in enumerate(c_values):
+    #     for j, size in enumerate(grid_sizes):
+    #         h = 1/size
+    #         x = np.linspace(0, 1, size)
+    #         x = x[1:-1]
+    #         A_h = create_discretized_helmholtz_matrix(size, c_) / h**2
 
 
 if __name__ == "__main__":

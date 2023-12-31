@@ -1,5 +1,6 @@
 import numpy as np
-from take_home_exam import f_rhs, analytical_solution, create_discretized_helmholtz_matrix, compute_symmetric_ssor_preconditioner
+from take_home_exam import compute_symmetric_ssor_preconditioner
+from helmholtz_problem import f_rhs, analytical_solution, create_discretized_helmholtz_matrix
 import helmholtz_solvers
 import direct_solution
 
