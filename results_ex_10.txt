@@ -1,0 +1,40 @@
+(c, h) = (0.1, 0.01)
+rate of convergence: 1.948E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (0.1, 0.001)
+rate of convergence: 1.948E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (1, 0.01)
+rate of convergence: 1.950E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (1, 0.001)
+rate of convergence: 1.950E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (10, 0.01)
+rate of convergence: 1.955E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (10, 0.001)
+rate of convergence: 1.957E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (100, 0.01)
+rate of convergence: 1.944E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (100, 0.001)
+rate of convergence: 1.960E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (1000, 0.01)
+rate of convergence: 1.811E-01
+spectral rad.: 1.000E+00
+
+(c, h) = (1000, 0.001)
+rate of convergence: 1.960E-01
+spectral rad.: 1.000E+00
+

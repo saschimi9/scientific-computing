@@ -1,10 +1,7 @@
 import numpy as np
-from take_home_exam import compute_symmetric_ssor_preconditioner
 from helmholtz_problem import f_rhs, analytical_solution, create_discretized_helmholtz_matrix
 import helmholtz_solvers
-import direct_solution
-
-import numpy as np
+from timeit import default_timer as timer
 import matplotlib.pyplot as plt
 
 
@@ -28,42 +25,58 @@ def plot_comparison_plot(x, u_exact, u_solver):
 
 def plot_all():
     # Parameters
-    grid_sizes = [10, 100]  # Example grid sizes
+    grid_sizes = [1000]  # Example grid sizes
     plt.figure(figsize=(12, 8))
-    c = 10
+    c = 100
 
     for grid_size in grid_sizes:
         h = 1/grid_size
         x = np.linspace(0, 1, grid_size+1)
         x = x[1:-1]
+        A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
+        rhs = f_rhs(c, x, h)
 
         # Solve the Helmholtz equation
-        u, _ = direct_solution.helmholtz_direct_solver(grid_size, h, c=c)
+        start_time = timer()
+        u = np.linalg.solve(A_h, rhs)
+        end_time = timer()
+        print(f'time spent: {end_time-start_time:.2g}')
 
-        A = create_discretized_helmholtz_matrix(size=grid_size, c=c)
-        rhs = f_rhs(c, x, h)
-        u_gs, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
-            A / h**2, rhs)
+        # u_gs, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
+        #     A_h, rhs)
+        # u_ssor, convergence_flag_ssor = helmholtz_solvers.ssor_solver(
+        #     A_h, rhs, omega=1.7)
 
-        M_sgs_inv = compute_symmetric_ssor_preconditioner(A/h**2, 1.0)
-        # M_sgs_inv = np.eye(A.shape[0])
-        ritz_values = []
-        u_sgs_cg, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
-            A/h**2, rhs, M_inv=M_sgs_inv, ritz_values=ritz_values)
+        M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+            A_h, 1.0)
+        u_cg_sgs, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+            A_h, rhs, M_inv=M_sgs_inv)
+        u_cgc_dir, convergence_flag_cgc_dir = helmholtz_solvers.coarse_grid_correction(
+            A_h, rhs, num_presmoothing_iter=5, num_postsmoothing_iter=5, internal_solver='direct')
+        u_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
+            A_h, rhs, num_presmoothing_iter=5, num_postsmoothing_iter=5, internal_solver='cg')
 
         # Compute the analytical solution
         u_exact = analytical_solution(x)
 
         # Compute and print the RMSE
         rmse = calculate_rmse(u, u_exact)
-        rmse_gs = calculate_rmse(u, u_gs)
-        rmse_sgs_cg = calculate_rmse(u, u_sgs_cg)
-        print(f'RMSE for h = {h}: {rmse:.2E}')
+        # rmse_gs = calculate_rmse(u, u_gs)
+        rmse_cg_sgs = calculate_rmse(u, u_cg_sgs)
+        # rmse_ssor = calculate_rmse(u, u_ssor)
+        rmse_cgc = calculate_rmse(u, u_cgc)
+        rmse_cgc_dir = calculate_rmse(u, u_cgc_dir)
+        # print(f'RMSE for h = {h}: {rmse:.2E}')
         # Plot the numerical and analytical solutions
         plt.plot(x, u, label=f'Direct (h = {h}), rmse: {rmse:.2E}')
-        plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
+        # plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
+        # plt.plot(x, u_ssor, label=f'SSOR (h = {h}), rmse: {rmse_ssor:.2E}')
         plt.plot(
-            x, u_sgs_cg, label=f'Prec. CG (h = {h}), rmse: {rmse_sgs_cg:.2E}')
+            x, u_cg_sgs, label=f'Prec. CG (h = {h}), rmse: {rmse_cg_sgs:.2E}')
+        plt.plot(
+            x, u_cgc, label=f'CGC (h = {h}), rmse: {rmse_cgc:.2E}')
+        plt.plot(
+            x, u_cgc_dir, label=f'CGC dir. (h = {h}), rmse: {rmse_cgc_dir:.2E}')
 
     # Only plot the last exact solution
     plt.plot(x, u_exact, label='Analytical', linestyle='dashed')

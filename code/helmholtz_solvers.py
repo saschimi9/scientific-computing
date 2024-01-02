@@ -8,9 +8,62 @@ def is_symmetric(A):
     return np.allclose(A, np.transpose(A), rtol=1e-5, atol=1e-5)
 
 
-def gauss_seidel_iteration(A, rhs, u_initial, num_iterations=1):
+def compute_symmetric_ssor_preconditioner(A, omega):
+    """Return the preconditioning matrix M_SGS(w)^{-1} for the symmetric successive over relaxation (SSOR)
+    with parameter $\omega$.
+
+    Args:
+        A (np.ndarray): System matrix NxN
+        omega (float): Overrelaxation parameter. Setting it to 1 leads to Symmetric Gauss-Seidel
+        precondioning
+    """
+    if not is_symmetric(A):
+        raise TypeError(
+            f"System matrix is not symmetric A[0:2,0:2]: {A[0:2,0:2]}")
+    D = np.diag(A)  # return 1-D array
+    D_inv = np.reciprocal(D)  # element-wise inverse
+    D_inv = np.diag(D_inv)
+    D = np.diag(D)  # create 2-D matrix
+    E = -np.tril(A, k=-1)  # get lower triangle without diagonal
+    F = -np.triu(A, k=1)  # get upper triangle without diagonal
+
+    M_ssor = 1/(omega*(2 - omega)) * (D - omega * E) @ D_inv @ (D - omega * F)
+
+    iden = np.eye(D.shape[0])
+    lower_inv = sp_la.solve_triangular((D - omega * E), iden, lower=True)
+    upper_inv = sp_la.solve_triangular((D - omega * F), iden)
+    M_ssor_inv = (omega*(2 - omega)) * upper_inv @ D @ lower_inv
+    assert np.allclose(M_ssor @ M_ssor_inv, iden)
+
+    return M_ssor_inv
+
+
+def compute_gauss_seidel_M_inverse(A_h, backwards=False):
+    n = A_h.shape[0]
+    if backwards:
+        M_gs = np.triu(A_h, 0)  # get lower triangle with diagonal
+        M_gs_inv = sp_la.solve_triangular(M_gs, np.eye(n), lower=False)
+    else:
+        M_gs = np.tril(A_h, 0)  # get lower triangle with diagonal
+        M_gs_inv = sp_la.solve_triangular(M_gs, np.eye(n), lower=True)
+    return M_gs_inv
+
+
+def compute_gauss_seidel_M(A_h, backwards=False):
+    if backwards:
+        M_gs = np.triu(A_h, 0)  # get lower triangle with diagonal
+    else:
+        M_gs = np.tril(A_h, 0)  # get lower triangle with diagonal
+    return M_gs
+
+
+def gauss_seidel_iteration(A, rhs, u_initial, num_iterations=1, reverse=False):
+    if reverse:
+        generator = reversed(range(len(rhs)))
+    else:
+        generator = range(len(rhs))
     for _ in range(num_iterations):
-        for i in range(len(rhs)):
+        for i in generator:
             sweep1 = np.dot(A[i, 0:i], u_initial[0:i])
             sweep2 = np.dot(A[i, i+1:], u_initial[i+1:])
             # indices out of bounds correctly return empty arrays
@@ -18,15 +71,7 @@ def gauss_seidel_iteration(A, rhs, u_initial, num_iterations=1):
     return u_initial
 
 
-def compute_gauss_seidel_M_inverse(A_h):
-    n = A_h.shape[0]
-    M_gs = np.tril(A_h, 0)  # get lower triangle with diagonal
-
-    M_gs_inv = sp_la.solve_triangular(M_gs, np.eye(n), lower=True)
-    return M_gs_inv
-
-
-def gauss_seidel_solver(A, rhs, tol=1e-8, max_iterations=10000):
+def gauss_seidel_solver(A, rhs, tol=1e-6, max_iterations=10000):
     u_sol = np.zeros(A.shape[1])
     u_sol_min_1 = np.copy(u_sol)
     u_sol_min_2 = np.copy(u_sol) + tol  # prevent division by zero
@@ -45,8 +90,8 @@ def gauss_seidel_solver(A, rhs, tol=1e-8, max_iterations=10000):
             # indices out of bounds correctly return empty arrays
             u_sol[i] = (rhs[i] - sweep1 - sweep2)/A[i, i]
 
-        rel_errors.append(np.abs(np.linalg.norm(u_sol - u_sol_min_1) /
-                                 np.linalg.norm(u_sol_min_1 - u_sol_min_2)))
+        rel_errors.append(np.linalg.norm(u_sol - u_sol_min_1) /
+                          np.linalg.norm(u_sol_min_1 - u_sol_min_2))
         u_sol_min_2 = np.copy(u_sol_min_1)
         u_sol_min_1 = np.copy(u_sol)
         residual = rhs - A @ u_sol
@@ -57,11 +102,12 @@ def gauss_seidel_solver(A, rhs, tol=1e-8, max_iterations=10000):
             f"GS solver did not converge after {max_iterations} iterations")
     if np.linalg.norm(residual)/rhs_norm <= tol:
         convergence_flag = True
+        print(f"GS converged after {counter} iterations on size {A.shape}")
 
     return u_sol, rel_errors, convergence_flag
 
 
-def ssor_solver(A, rhs, tol=1e-5, omega=1, max_iterations=10000):
+def ssor_solver(A, rhs, tol=1e-8, omega=1, max_iterations=10000):
     """Symmetric successive overrelaxation with parameter.
 
     Args:
@@ -75,29 +121,28 @@ def ssor_solver(A, rhs, tol=1e-5, omega=1, max_iterations=10000):
         raise TypeError("A is not symmetric.")
 
     u_sol = np.zeros(A.shape[1])
-    sigma = np.zeros(A.shape[1])
+    sigma = 0.0
 
     residual = rhs - A @ u_sol
     rhs_norm = np.linalg.norm(rhs)
     counter = 0
-    rel_errors = []
     convergence_flag = False
 
     while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
         # Forward sweep
         for i in range(u_sol.shape[0]):
-            sigma[i] = u_sol[i]
-            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
-            u_sol[i] -= np.dot(A[i, i+1:], u_sol[i+1:])
-            u_sol /= A[i, i]
-            u_sol = omega * u_sol[i] + (1 - omega) * sigma[i]
+            sigma = u_sol[i]
+            sweep1 = np.dot(A[i, 0:i], u_sol[0:i])
+            sweep2 = np.dot(A[i, i+1:], u_sol[i+1:])
+            u_sol[i] = (rhs[i] - sweep1 - sweep2)/A[i, i]
+            u_sol[i] = omega * u_sol[i] + (1 - omega) * sigma
         # Backward sweep
         for i in reversed(range(u_sol.shape[0])):
-            sigma[i] = u_sol[i]
-            u_sol[i] = rhs[i] - np.dot(A[i, 0:i], u_sol[0:i])
-            u_sol[i] -= np.dot(A[i, i+1:], u_sol[i+1:])
-            u_sol /= A[i, i]
-            u_sol = omega * u_sol[i] + (1 - omega) * sigma[i]
+            sigma = u_sol[i]
+            sweep1 = np.dot(A[i, 0:i], u_sol[0:i])
+            sweep2 = np.dot(A[i, i+1:], u_sol[i+1:])
+            u_sol[i] = (rhs[i] - sweep1 - sweep2)/A[i, i]
+            u_sol[i] = omega * u_sol[i] + (1 - omega) * sigma
         residual = rhs - A @ u_sol
         counter += 1
 
@@ -106,8 +151,9 @@ def ssor_solver(A, rhs, tol=1e-5, omega=1, max_iterations=10000):
             f"SSOR solver did not converge after {max_iterations} iterations with omega {omega}.")
     if np.linalg.norm(residual)/rhs_norm <= tol:
         convergence_flag = True
+        print(f"SSOR converged after {counter} iterations on size {A.shape}")
 
-    return u_sol, rel_errors, convergence_flag
+    return u_sol, convergence_flag
 
 
 def preconditioned_conjugate_gradient_with_ritz(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
@@ -167,6 +213,8 @@ def preconditioned_conjugate_gradient_with_ritz(A, rhs, M_inv=None, max_iteratio
             f"Preconditioned CG solver did not converge after {max_iterations} iterations with M_inv {M_inv}.")
     if np.linalg.norm(residual)/rhs_norm <= tol:
         convergence_flag = True
+        print(
+            f"Prec. CG converged after {counter} iterations on size {A.shape}")
 
     end_time = timer()
     print(f'time spent: {end_time-start_time:.2g}')
@@ -174,7 +222,10 @@ def preconditioned_conjugate_gradient_with_ritz(A, rhs, M_inv=None, max_iteratio
     return u_sol, convergence_flag
 
 
-def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, residuals=None):
+def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_solver='direct', num_presmoothing_iter=1, num_postsmoothing_iter=1, residuals=None):
+    if internal_solver not in ['gs', 'cg', 'direct']:
+        raise ValueError(
+            "Argument 'internal_solver' needs to be 'cg' or 'gs' or 'direct'.")
     start_time = timer()
     counter = 0
     convergence_flag = False
@@ -190,9 +241,11 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, residuals=N
     r_2h = np.zeros(n//2+1)
     A_2h = I_toCoarse @ A_h @ I_toFine
 
-    nu1 = 1
-    nu2 = 1
+    nu1 = num_presmoothing_iter
+    nu2 = num_postsmoothing_iter
+
     M_gs_inv = compute_gauss_seidel_M_inverse(A_h)
+    M_sgs_inv = compute_symmetric_ssor_preconditioner(A_2h, omega=1.0)
 
     while np.linalg.norm(rhs_h - A_h @ u_sol)/rhs_norm > tol and counter < max_iterations:
         u_h1 = gauss_seidel_iteration(
@@ -200,20 +253,31 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, residuals=N
         + M_gs_inv @ rhs_h
         r_h = rhs_h - A_h @ u_h1
         r_2h = I_toCoarse @ r_h
-        e_2h, _, convergence_flag_gs = gauss_seidel_solver(
-            A_2h, r_2h, tol=1e-10)
-        assert convergence_flag_gs
+        if internal_solver == 'gs':
+            e_2h, _, convergence_flag = gauss_seidel_solver(
+                A_2h, r_2h, tol=1e-10)
+        elif internal_solver == 'cg':
+            e_2h, convergence_flag = preconditioned_conjugate_gradient_with_ritz(
+                A_2h, r_2h, M_inv=M_sgs_inv, tol=1e-10)
+        elif internal_solver == 'direct':
+            e_2h = np.linalg.solve(A_2h, r_2h)
+        # assert convergence_flag_gs
         e_h = I_toFine @ e_2h
         u_h2 = u_h1 + e_h
-        u_sol = gauss_seidel_iteration(A_h, rhs_h, u_h2, num_iterations=nu2)
+        u_sol = gauss_seidel_iteration(
+            A_h, rhs_h, u_h2, num_iterations=nu2, reverse=True)
         + M_gs_inv @ rhs_h
+        if residuals is not None:
+            residuals.append(A_h @ u_sol - rhs_h)
         counter += 1
 
     if counter >= max_iterations:
         print(
-            f"Preconditioned CG solver did not converge after {max_iterations} iterations with M_inv {M_inv}.")
+            f"Preconditioned CCG solver did not converge after {max_iterations} iterations.")
     if np.linalg.norm(rhs_h - A_h @ u_sol)/rhs_norm <= tol:
         convergence_flag = True
+        print(f"CGC converged after {counter} iterations on size {A_h.shape}")
+
     end_time = timer()
     print(f'time spent: {end_time-start_time:.2g}')
 

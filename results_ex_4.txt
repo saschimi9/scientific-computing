@@ -2,43 +2,51 @@
 rate of convergence: 9.044E-01
 spectral rad.: 9.044E-01
 min rate: 4.199E-01
-avg. rate: 9.011E-01
+avg. rate: 9.017E-01
+
 (c, h) = (0.01, 0.01)
 rate of convergence: 9.990E-01
 spectral rad.: 9.990E-01
 min rate: 3.729E-01
-avg. rate: 9.985E-01
+avg. rate: 9.986E-01
+
 Convergence failed for (c, h) = (0.01, h=0.001)
 (c, h) = (0.1, 0.1)
 rate of convergence: 9.036E-01
 spectral rad.: 9.036E-01
 min rate: 4.210E-01
-avg. rate: 9.003E-01
+avg. rate: 9.009E-01
+
 (c, h) = (0.1, 0.01)
 rate of convergence: 9.990E-01
 spectral rad.: 9.990E-01
 min rate: 3.729E-01
-avg. rate: 9.985E-01
+avg. rate: 9.986E-01
+
 Convergence failed for (c, h) = (0.1, h=0.001)
 (c, h) = (1, 0.1)
 rate of convergence: 8.955E-01
 spectral rad.: 8.955E-01
 min rate: 4.318E-01
-avg. rate: 8.923E-01
+avg. rate: 8.929E-01
+
 (c, h) = (1, 0.01)
 rate of convergence: 9.989E-01
 spectral rad.: 9.989E-01
 min rate: 3.731E-01
-avg. rate: 9.984E-01
+avg. rate: 9.985E-01
+
 Convergence failed for (c, h) = (1, h=0.001)
 (c, h) = (10, 0.1)
 rate of convergence: 8.204E-01
 spectral rad.: 8.204E-01
 min rate: 5.063E-01
-avg. rate: 8.184E-01
+avg. rate: 8.188E-01
+
 (c, h) = (10, 0.01)
 rate of convergence: 9.980E-01
 spectral rad.: 9.980E-01
 min rate: 3.747E-01
-avg. rate: 9.973E-01
+avg. rate: 9.975E-01
+
 Convergence failed for (c, h) = (10, h=0.001)
