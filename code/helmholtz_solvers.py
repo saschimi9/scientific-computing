@@ -156,7 +156,7 @@ def ssor_solver(A, rhs, tol=1e-8, omega=1, max_iterations=10000):
     return u_sol, convergence_flag
 
 
-def preconditioned_conjugate_gradient_with_ritz(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
+def preconditioned_conjugate_gradient(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
     """
     Conjugate Gradient algorithm with Ritz value computation for a one-dimensional problem.
 
@@ -245,6 +245,7 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_so
     nu2 = num_postsmoothing_iter
 
     M_gs_inv = compute_gauss_seidel_M_inverse(A_h)
+    M_gs_inv_bw = compute_gauss_seidel_M_inverse(A_h, backwards=True)
     M_sgs_inv = compute_symmetric_ssor_preconditioner(A_2h, omega=1.0)
 
     while np.linalg.norm(rhs_h - A_h @ u_sol)/rhs_norm > tol and counter < max_iterations:
@@ -257,7 +258,7 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_so
             e_2h, _, convergence_flag = gauss_seidel_solver(
                 A_2h, r_2h, tol=1e-10)
         elif internal_solver == 'cg':
-            e_2h, convergence_flag = preconditioned_conjugate_gradient_with_ritz(
+            e_2h, convergence_flag = preconditioned_conjugate_gradient(
                 A_2h, r_2h, M_inv=M_sgs_inv, tol=1e-10)
         elif internal_solver == 'direct':
             e_2h = np.linalg.solve(A_2h, r_2h)
@@ -266,7 +267,7 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_so
         u_h2 = u_h1 + e_h
         u_sol = gauss_seidel_iteration(
             A_h, rhs_h, u_h2, num_iterations=nu2, reverse=True)
-        + M_gs_inv @ rhs_h
+        + M_gs_inv_bw @ rhs_h
         if residuals is not None:
             residuals.append(A_h @ u_sol - rhs_h)
         counter += 1

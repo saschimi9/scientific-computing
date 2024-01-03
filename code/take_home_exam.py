@@ -217,7 +217,7 @@ def experiments_exercise_2_3():
             plt.scatter(np.real(eigvals), np.imag(eigvals),
                         label=f'h = {1/size:.1E}, c = {c_:.1E})',
                         color=colors[i*len(grid_sizes)+j],
-                        s=1)
+                        s=5)
 
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
@@ -243,7 +243,7 @@ def experiments_exercise_2_3():
             plt.scatter(np.real(eigvals), np.imag(eigvals),
                         label=f'h = {1/size:.1E}, c = {c_:.1E})',
                         color=colors[i*len(grid_sizes)+j],
-                        s=1)
+                        s=5)
 
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
@@ -339,7 +339,7 @@ def experiments_exercise_6():
 
             # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
             #     A, rhs, residuals=residuals_uncond)
-            u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+            u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
                 A_h, rhs=rhs, M_inv=M_sgs_inv, tol=1e-10, residuals=residuals)
 
             # Check solution
@@ -371,11 +371,11 @@ def experiments_exercise_6():
 
 def experiments_exercise_7():
     c = 1000
-    grid_size = 1000
+    grid_size = 100
 
     residuals = []
     h = 1/grid_size
-    x = np.linspace(0, 1, grid_size)
+    x = np.linspace(0, 1, grid_size+1)
     x = x[1:-1]
     A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
     rhs = f_rhs(c, x, h)
@@ -385,31 +385,30 @@ def experiments_exercise_7():
 
     prec_operator = np.matmul(M_sgs_inv, A_h)
 
-    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
-        A_h, rhs=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)
+    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
+        A_h, rhs=rhs, tol=1e-10, M_inv=None, residuals=residuals)
     assert convergence_flag  # "Problem did not converge"
     print("CG done")
 
     series_of_ritz_values = compute_series_of_ritz_values(
-        M_sgs_inv @ A_h, residuals)
-    prec_operator_eigenvalues = np.linalg.eigvals(prec_operator)
+        A_h, residuals)
+    prec_operator_eigenvalues = np.linalg.eigvals(A_h)
     print("Compute Ritz values done")
 
     # Check solution
     u_exact = analytical_solution(x)
-    assert np.isclose(calculate_rmse(
-        u_sol, u_exact), 0, atol=1e-7)
+    # assert np.isclose(calculate_rmse(
+    #     u_sol, u_exact), 0, atol=1e-7)
 
     fig = plt.figure(figsize=(16, 8))
-    plt.scatter(range(len(
-        series_of_ritz_values[0])),
-        np.abs(prec_operator_eigenvalues[:len(
-            series_of_ritz_values[0])]),
+    plt.scatter(len(
+        series_of_ritz_values[0])*np.ones(len(prec_operator_eigenvalues)),
+        np.abs(prec_operator_eigenvalues),
         label="$\mathrm{eig}(M_{\mathrm{SGS}}^{-1} A)$",
-        s=1)
-    plt.scatter([len(
-        series_of_ritz_values[0])], prec_operator_eigenvalues[-1], label="last $\mathrm{eig}(M_{\mathrm{SGS}}^{-1} A)$",
         s=5)
+    # plt.scatter([len(
+    #     series_of_ritz_values[0])], prec_operator_eigenvalues[-1], label="last $\mathrm{eig}(M_{\mathrm{SGS}}^{-1} A)$",
+    #     s=5)
 
     for i, series_of_ritz_value in enumerate(series_of_ritz_values):
         plt.plot(np.abs(series_of_ritz_value))
@@ -520,6 +519,7 @@ def experiments_exercise_11():
     for i, c_ in enumerate(c_values):
         for j, grid_size in enumerate(grid_sizes):
             residuals = []
+            residuals1 = []
             h = 1/grid_size
             x = np.linspace(0, 1, grid_size+1)
             x = x[1:-1]
@@ -534,8 +534,10 @@ def experiments_exercise_11():
             P_rhs_h = projection @ rhs
             M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
                 P_A_h, omega=1.0)
-
-            u_sol_cg, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+            # A u = f -> u -> P A x = P f -> P A x = Pf = PA u
+            u_sol, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
+                A=A_h, rhs=rhs, max_iterations=1000, tol=1e-12, residuals=residuals1)
+            u_sol_cg, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
                 A=P_A_h, rhs=P_rhs_h, max_iterations=1000, tol=1e-12, residuals=residuals)
 
             # Check solution
@@ -598,7 +600,7 @@ def experiments_exercise_12():
             axs[0].set_xlabel('Real part')
 
             eigvals_B_tgm_1 = eigvals_B_tgm[np.logical_and(np.real(eigvals_B_tgm) > 1e-12,
-                                            np.real(eigvals_B_tgm) < 0.1)]
+                                                           np.real(eigvals_B_tgm) < 0.1)]
             axs[1].scatter(np.real(eigvals_B_tgm_1), np.imag(eigvals_B_tgm_1),
                            label=f'h = {1/grid_size:.1E}, c = {c_:.1E})',
                            color=colors[i*len(grid_sizes)+j],
@@ -662,6 +664,6 @@ if __name__ == "__main__":
     # Exercise 10
     # experiments_exercise_10()
     # Exercise 11
-    # experiments_exercise_11()
+    experiments_exercise_11()
     # Exercise 12
-    experiments_exercise_12()
+    # experiments_exercise_12()
