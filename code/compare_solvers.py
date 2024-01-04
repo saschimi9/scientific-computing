@@ -25,7 +25,7 @@ def plot_comparison_plot(x, u_exact, u_solver):
 
 def plot_all():
     # Parameters
-    grid_sizes = [1000]  # Example grid sizes
+    grid_sizes = [100]  # Example grid sizes
     plt.figure(figsize=(12, 8))
     c = 100
 
@@ -42,14 +42,14 @@ def plot_all():
         end_time = timer()
         print(f'time spent: {end_time-start_time:.2g}')
 
-        # u_gs, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
-        #     A_h, rhs)
-        # u_ssor, convergence_flag_ssor = helmholtz_solvers.ssor_solver(
-        #     A_h, rhs, omega=1.7)
+        u_gs, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
+            A_h, rhs)
+        u_ssor, convergence_flag_ssor = helmholtz_solvers.ssor_solver(
+            A_h, rhs, omega=1.7)
 
         M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
             A_h, 1.0)
-        u_cg_sgs, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+        u_cg_sgs, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
             A_h, rhs, M_inv=M_sgs_inv)
         u_cgc_dir, convergence_flag_cgc_dir = helmholtz_solvers.coarse_grid_correction(
             A_h, rhs, num_presmoothing_iter=5, num_postsmoothing_iter=5, internal_solver='direct')
@@ -61,16 +61,16 @@ def plot_all():
 
         # Compute and print the RMSE
         rmse = calculate_rmse(u, u_exact)
-        # rmse_gs = calculate_rmse(u, u_gs)
+        rmse_gs = calculate_rmse(u, u_gs)
         rmse_cg_sgs = calculate_rmse(u, u_cg_sgs)
-        # rmse_ssor = calculate_rmse(u, u_ssor)
+        rmse_ssor = calculate_rmse(u, u_ssor)
         rmse_cgc = calculate_rmse(u, u_cgc)
         rmse_cgc_dir = calculate_rmse(u, u_cgc_dir)
         # print(f'RMSE for h = {h}: {rmse:.2E}')
         # Plot the numerical and analytical solutions
         plt.plot(x, u, label=f'Direct (h = {h}), rmse: {rmse:.2E}')
-        # plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
-        # plt.plot(x, u_ssor, label=f'SSOR (h = {h}), rmse: {rmse_ssor:.2E}')
+        plt.plot(x, u_gs, label=f'GS (h = {h}), rmse: {rmse_gs:.2E}')
+        plt.plot(x, u_ssor, label=f'SSOR (h = {h}), rmse: {rmse_ssor:.2E}')
         plt.plot(
             x, u_cg_sgs, label=f'Prec. CG (h = {h}), rmse: {rmse_cg_sgs:.2E}')
         plt.plot(
