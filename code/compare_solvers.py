@@ -47,7 +47,7 @@ def plot_all():
         u_ssor, convergence_flag_ssor = helmholtz_solvers.ssor_solver(
             A_h, rhs, omega=1.7)
 
-        M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+        M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
             A_h, 1.0)
         u_cg_sgs, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
             A_h, rhs, M_inv=M_sgs_inv)

@@ -63,15 +63,8 @@ def compute_effective_condition_number(A):
     return condition_number_A
 
 
-def create_gauss_seidel_error_propagation_matrix(A_h, backwards=False):
-    M_gs_inv = helmholtz_solvers.compute_gauss_seidel_M_inverse(
-        A_h, backwards=backwards)
-    B_gs = np.eye(A_h.shape[0]) - np.matmul(M_gs_inv, A_h)
-    return B_gs
-
-
 def compute_eigenvals_gauss_seidel_error_propagation_matrix(A_h):
-    B_gs = create_gauss_seidel_error_propagation_matrix(A_h)
+    B_gs = helmholtz_solvers.create_gauss_seidel_error_propagation_matrix(A_h)
     eigvals_B_gs = np.linalg.eigvals(B_gs)
     spectral_radius = np.max(np.abs(eigvals_B_gs))
 
@@ -285,7 +278,7 @@ def experiments_exercise_5():
                     size=grid_size, c=c)/h**2
                 condition_number_A, = compute_condition_number(
                     A)
-                M_ssor_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+                M_ssor_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
                     A, 1.0)
                 prec_operator = M_ssor_inv @ A
                 condition_number_prec_operator = np.linalg.cond(
@@ -313,7 +306,7 @@ def experiments_exercise_6():
                 size=grid_size, c=c) / h**2
             rhs = f_rhs(c, x, h)
 
-            M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+            M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
                 A_h, omega=1.0)
 
             # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
@@ -358,7 +351,7 @@ def experiments_exercise_7():
     A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
     rhs = f_rhs(c, x, h)
 
-    M1_sgs_inv, M2_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner_split(
+    M1_sgs_inv, M2_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv_split(
         A_h, omega=1.0)
 
     # prec_operator = A_h
@@ -461,7 +454,7 @@ def experiments_exercise_8_9():
 def experiments_exercise_10():
     c_values = [0.1, 1, 10, 100, 1000]
 
-    grid_sizes = [100, 1000]
+    grid_sizes = [10, 100]
 
     figsize = (15, 8)
     fig = plt.figure(figsize=figsize)
@@ -469,15 +462,21 @@ def experiments_exercise_10():
         for i, c_ in enumerate(c_values):
             for j, grid_size in enumerate(grid_sizes):
                 residuals = []
+                residuals_ssor = []
                 h = 1/grid_size
                 x = np.linspace(0, 1, grid_size+1)
                 x = x[1:-1]
                 A_h = create_discretized_helmholtz_matrix(
                     grid_size, c_) / h**2
                 rhs = f_rhs(c_, x, h)
-
+                M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
+                    A_h, 1.0)
+                M_inv_A_h = M_sgs_inv @ A_h
+                M_inv_rhs_h = M_sgs_inv @ rhs
                 u_sol_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
-                    A_h, rhs_h=rhs, max_iterations=10000, tol=1e-10, residuals=residuals)
+                    M_inv_A_h, rhs_h=M_inv_rhs_h, max_iterations=10000, tol=1e-10, residuals=residuals)
+                u_sol_ssor, _ = helmholtz_solvers.ssor_solver(
+                    M_inv_A_h, M_inv_rhs_h, max_iterations=10000, tol=1e-10, omega=1.0, residuals=residuals_ssor)
 
                 # Check solution
                 u_exact = analytical_solution(x)
@@ -503,13 +502,17 @@ def experiments_exercise_10():
 
             plt.plot(
                 [np.linalg.norm(residual, ord=2) for residual in residuals],
-                label=f"$(c,h)=({c_}, {h}), "+"$\rho(B_{{CGC}})=$"+f"{spectral_radius:.2E}")
+                label=f"(c,h)=({c_}, {h}), "+"$\\rho(B_{CGC})=$"+f"{spectral_radius:.2E}")
+            plt.plot(
+                [np.linalg.norm(residual, ord=2)
+                 for residual in residuals_ssor],
+                label=f"(c,h)=({c_}, {h}), "+"$\\rho(B_{SSOR})=$"+f"{spectral_radius:.2E}")
 
     plt.xlabel('# iterations')
     plt.ylabel('2-norm of residual')
     plt.legend(prop={'size': 6})
     plt.semilogy()
-    plt.show()
+    # plt.show()
     fig.savefig("figures/plot_ex_10_convergence.pdf")
     fig.savefig("figures/plot_ex_10_convergence.svg")
 
@@ -538,7 +541,7 @@ def experiments_exercise_11():
 
             P_A_h = projection @ A_h
             P_rhs_h = projection @ rhs
-            M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+            M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
                 P_A_h, omega=1.0)
             # A u = f -> u -> P A x = P f -> P A x = Pf = PA u
             u_sol, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
@@ -583,12 +586,8 @@ def experiments_exercise_12():
                 grid_size, c_) / h**2
             rhs = f_rhs(c_, x, h)
 
-            B_gs = create_gauss_seidel_error_propagation_matrix(A_h)
-            B_cgc = helmholtz_solvers.create_coarse_grid_correction_error_propagation_matrix(
+            B_tgm = helmholtz_solvers.create_two_grid_method_error_propagation_matrix(
                 A_h)
-            B_gs_backwards = create_gauss_seidel_error_propagation_matrix(
-                A_h, backwards=True)
-            B_tgm = B_gs_backwards @ B_cgc @ B_gs
 
             eigvals_B_tgm = np.linalg.eigvals(B_tgm)
             spectral_radius = np.max(np.abs(eigvals_B_tgm))
@@ -621,13 +620,54 @@ def experiments_exercise_12():
             axs[2].set_xlabel('Real part')
 
     fig.show()
-    fig.savefig("figures/plot_ex_12_eigenvalues.pdf")
-    fig.savefig("figures/plot_ex_12_eigenvalues.svg")
+    # fig.savefig("figures/plot_ex_12_eigenvalues.pdf")
+    # fig.savefig("figures/plot_ex_12_eigenvalues.svg")
 
     with open("results_ex_12.txt", 'w') as f:
         for (c_, size, spectral_rad) in spectral_rads:
             line = f"(c,h)=({c_:1E}, {1/size:1E}): rho(B_GS)={spectral_rad})\n"
             f.write(line)
+
+
+def experiments_exercise_12_4():
+    c_values = [0.01, 0.1, 1, 10, 100, 1000]
+    # c_values = [0.1]
+    grid_sizes = [10, 100]
+
+    fig = plt.figure(figsize=(16, 8))
+
+    for c in c_values:
+        for grid_size in grid_sizes:
+            residuals = []
+            h = 1/grid_size
+            x = np.linspace(0, 1, grid_size+1)
+            x = x[1:-1]
+            A_h = create_discretized_helmholtz_matrix(
+                size=grid_size, c=c) / h**2
+            rhs = f_rhs(c, x, h)
+
+            u_sol, convergence_flag = helmholtz_solvers.two_grid_method_matrix(
+                A_h=A_h, rhs_h=rhs, tol=1e-10, residuals=residuals)
+
+            # Check solution
+            u_exact = analytical_solution(x)
+            # assert np.isclose(calculate_rmse(
+            #     u_sol, u_exact), 0, atol=1e-7)
+
+            cond_A = compute_condition_number(A_h)
+            cond_prec = np.linalg.cond(A_h)
+            plt.plot(
+                [np.linalg.norm(residual, ord=2) for residual in residuals],
+                label=f"TGM: $(c,h)=({c}, {h}), \kappa_2={cond_prec:.2E}$")
+
+    plt.xlabel('# iterations')
+    plt.ylabel('2-norm of residual')
+    plt.legend(prop={'size': 6})
+    plt.semilogy()
+    # plt.grid(True)
+    plt.show()
+    fig.savefig("figures/plot_ex_12_4_convergence.pdf")
+    fig.savefig("figures/plot_ex_12_4_convergence.svg")
 
 
 if __name__ == "__main__":
@@ -661,8 +701,9 @@ if __name__ == "__main__":
     # Exercise 08, 09
     # experiments_exercise_8_9()
     # Exercise 10
-    experiments_exercise_10()
+    # experiments_exercise_10()
     # Exercise 11
     # experiments_exercise_11()
     # Exercise 12
     # experiments_exercise_12()
+    experiments_exercise_12_4()
