@@ -308,7 +308,7 @@ def experiments_exercise_5():
                     A)
                 M_ssor_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
                     A, 1.0)
-                prec_operator = M_ssor_inv * A
+                prec_operator = M_ssor_inv @ A
                 condition_number_prec_operator = np.linalg.cond(
                     prec_operator)
                 line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
