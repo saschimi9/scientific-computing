@@ -51,9 +51,9 @@ def plot_all():
             A_h, 1.0)
         u_cg_sgs, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
             A_h, rhs, M_inv=M_sgs_inv)
-        u_cgc_dir, convergence_flag_cgc_dir = helmholtz_solvers.coarse_grid_correction(
+        u_cgc_dir, convergence_flag_cgc_dir = helmholtz_solvers.two_grid_method_point_wise(
             A_h, rhs, num_presmoothing_iter=5, num_postsmoothing_iter=5, internal_solver='direct')
-        u_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
+        u_cgc, convergence_flag_cgc = helmholtz_solvers.two_grid_method_point_wise(
             A_h, rhs, num_presmoothing_iter=5, num_postsmoothing_iter=5, internal_solver='cg')
 
         # Compute the analytical solution
