@@ -316,7 +316,7 @@ def experiments_exercise_4():
                     A_h)
                 rhs = f_rhs(c_, x, h)
                 u_sol, rel_errors, convergence_flag = helmholtz_solvers.gauss_seidel_solver(
-                    A_h, rhs, tol=1e-6)
+                    A_h, rhs, tol=1e-6, max_iterations=10000)
                 if convergence_flag:
                     lines = [f"(c, h) = ({c_}, {h})\n",
                              f"rate of convergence: {rel_errors[len(rel_errors)-5]:.3E}\n",
@@ -673,9 +673,9 @@ if __name__ == "__main__":
     # Exercise 01
     # experiments_exercise_1()
     # Exercise 02, 03
-    experiments_exercise_2_3()
+    # experiments_exercise_2_3()
     # Exercise 04
-    # experiments_exercise_4()
+    experiments_exercise_4()
     # Exercise 05
     # experiments_exercise_5()
     # Exercise 06
