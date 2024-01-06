@@ -37,6 +37,7 @@ def compute_symmetric_ssor_preconditioner(A, omega):
 
     return M_ssor_inv
 
+
 def compute_symmetric_ssor_preconditioner_split(A, omega):
     """Return the preconditioning matrix M_SGS(w)^{-1} for the symmetric successive over relaxation (SSOR)
     with parameter $\omega$.
@@ -244,10 +245,11 @@ def preconditioned_conjugate_gradient(A, rhs, M_inv=None, max_iterations=5000, t
 
     return u_sol, convergence_flag
 
+
 def preconditioned_conjugate_gradient_type2(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
     """
-    Conjugate Gradient algorithm for a one-dimensional problem. 
-    Left preconditioning the system matrix A instead of the residual. 
+    Conjugate Gradient algorithm for a one-dimensional problem.
+    Left preconditioning the system matrix A instead of the residual.
     -> convenient if N^2*(N + 1) < N^2 * iterations it takes to CG to converge.
 
     Parameters:
@@ -313,10 +315,11 @@ def preconditioned_conjugate_gradient_type2(A, rhs, M_inv=None, max_iterations=5
 
     return u_sol, convergence_flag
 
+
 def preconditioned_conjugate_gradient_type3(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
     """
-    Conjugate Gradient algorithm for a one-dimensional problem. 
-    Splitting the preconditioning matrix M = M1 * M2 such that the 
+    Conjugate Gradient algorithm for a one-dimensional problem.
+    Splitting the preconditioning matrix M = M1 * M2 such that the
     preconditioned system matrix is M1_inv * A * M2_inv.
 
     Parameters:
@@ -383,7 +386,120 @@ def preconditioned_conjugate_gradient_type3(A, rhs, M_inv=None, max_iterations=5
 
     return u_sol, convergence_flag
 
-def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_solver='direct', num_presmoothing_iter=1, num_postsmoothing_iter=1, residuals=None):
+
+# Coarse grid correction
+def create_coarsening_matrix(size):
+    """
+    Create a coarsening matrix for a given finer grid size size.
+
+    Parameters:
+    - size: Size of the finer grid.
+
+    Returns:
+    - A numpy matrix representing the coarsening matrix.
+    """
+    if size % 2 != 0:
+        raise ValueError("The size of the finer grid 'size' should be even.")
+    size_fine = size-1
+    size_coarse = size_fine // 2
+
+    coarsening_matrix = np.zeros((size_coarse, size_fine))
+
+    # Fill the diagonal with ones
+    coarsening_matrix[np.arange(size_coarse),
+                      np.arange(0, size_fine - 2, 2)] = 1
+
+    # Fill the upper diagonal with twos
+    coarsening_matrix[np.arange(size_coarse),
+                      np.arange(1, size_fine - 1, 2)] = 2
+
+    # Fill the second upper diagonal with ones
+    coarsening_matrix[np.arange(size_coarse),
+                      np.arange(2, size_fine, 2)] = 1
+
+    return coarsening_matrix/4
+
+
+def create_prolongation_matrix(size):
+    """
+    Uses `create_coarsening_matrix` and returns the transpose of the matrix
+    multiplied by 2
+    """
+    return 2 * np.transpose(create_coarsening_matrix(size))
+
+
+def create_coarse_grid_correction_M_inv(A_h):
+    I_toFine = create_prolongation_matrix(A_h.shape[0]+1)
+    I_toCoarse = create_coarsening_matrix(A_h.shape[0]+1)
+    A_H = I_toCoarse @ A_h @ I_toFine
+    A_H_inv = np.linalg.inv(A_H)
+
+    M_cgc_inv = I_toFine @ A_H_inv @ I_toCoarse
+    return M_cgc_inv
+
+
+def create_coarse_grid_correction_error_propagation_matrix(A_h):
+    M_cgc_inv = create_coarse_grid_correction_M_inv(A_h)
+    B_cgc = np.eye(A_h.shape[0]) - M_cgc_inv @ A_h
+
+    return B_cgc
+
+
+def create_two_grid_method_error_propagation_matrix(A_h):
+    pass
+
+
+def create_two_grid_method_M_inv(A_h):
+    pass
+
+
+def coarse_grid_correction(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=None):
+    start_time = timer()
+    counter = 0
+    convergence_flag = False
+    rhs_norm = np.linalg.norm(rhs_h, ord=2)
+
+    u_sol = rhs_h.copy()
+    residual = A_h @ u_sol - rhs_h
+
+    M_CGC_inv = create_coarse_grid_correction_M_inv(A_h)
+    rhs_prec = M_CGC_inv @ rhs_h
+    B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
+        u_sol = B_cgc @ u_sol + rhs_prec
+        residual = A_h @ u_sol - rhs_h
+        if residuals is not None:
+            residuals.append(residual)
+        counter += 1
+
+    if counter >= max_iterations:
+        print(
+            f"CGC solver did not converge after {max_iterations} iterations.")
+    if np.linalg.norm(rhs_h - A_h @ u_sol)/rhs_norm <= tol:
+        convergence_flag = True
+        print(f"CGC converged after {counter} iterations on size {A_h.shape}")
+
+    end_time = timer()
+    print(f'time spent: {end_time-start_time:.2g}')
+    return u_sol, convergence_flag
+
+
+def two_grid_method_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, num_presmoothing_iter=1, num_postsmoothing_iter=1, residuals=None):
+    n = len(rhs_h)
+    I_toCoarse = create_coarsening_matrix(n+1)
+    I_toFine = create_prolongation_matrix(n+1)
+    A_2h = I_toCoarse @ A_h @ I_toFine
+
+    nu1 = num_presmoothing_iter
+    nu2 = num_postsmoothing_iter
+
+    M_gs_inv = compute_gauss_seidel_M_inverse(A_h)
+    M_gs_inv_bw = compute_gauss_seidel_M_inverse(A_h, backwards=True)
+    return None
+
+
+def two_grid_method_point_wise(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_solver='direct', num_presmoothing_iter=1, num_postsmoothing_iter=1, residuals=None):
     if internal_solver not in ['gs', 'cg', 'direct']:
         raise ValueError(
             "Argument 'internal_solver' needs to be 'cg' or 'gs' or 'direct'.")
@@ -392,8 +508,8 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_so
     convergence_flag = False
     n = len(rhs_h)
     rhs_norm = np.linalg.norm(rhs_h, ord=2)
-    I_toCoarse = take_home_exam.create_coarsening_matrix(n+1)
-    I_toFine = take_home_exam.create_prolongation_matrix(n+1)
+    I_toCoarse = create_coarsening_matrix(n+1)
+    I_toFine = create_prolongation_matrix(n+1)
 
     u_sol = rhs_h.copy()
     u_h1 = np.zeros(n)

@@ -26,46 +26,6 @@ def calculate_rmse(approximate, exact):
     return np.sqrt(np.mean((approximate - exact)**2))
 
 
-def create_coarsening_matrix(size):
-    """
-    Create a coarsening matrix for a given finer grid size size.
-
-    Parameters:
-    - size: Size of the finer grid.
-
-    Returns:
-    - A numpy matrix representing the coarsening matrix.
-    """
-    if size % 2 != 0:
-        raise ValueError("The size of the finer grid 'size' should be even.")
-    size_fine = size-1
-    size_coarse = size_fine // 2
-
-    coarsening_matrix = np.zeros((size_coarse, size_fine))
-
-    # Fill the diagonal with ones
-    coarsening_matrix[np.arange(size_coarse),
-                      np.arange(0, size_fine - 2, 2)] = 1
-
-    # Fill the upper diagonal with twos
-    coarsening_matrix[np.arange(size_coarse),
-                      np.arange(1, size_fine - 1, 2)] = 2
-
-    # Fill the second upper diagonal with ones
-    coarsening_matrix[np.arange(size_coarse),
-                      np.arange(2, size_fine, 2)] = 1
-
-    return coarsening_matrix/4
-
-
-def create_prolongation_matrix(size):
-    """
-    Uses `create_coarsening_matrix` and returns the transpose of the matrix
-    multiplied by 2
-    """
-    return 2 * np.transpose(create_coarsening_matrix(size))
-
-
 def is_symmetric(A):
     return np.allclose(A, np.transpose(A), rtol=1e-5, atol=1e-5)
 
@@ -116,23 +76,6 @@ def compute_eigenvals_gauss_seidel_error_propagation_matrix(A_h):
     spectral_radius = np.max(np.abs(eigvals_B_gs))
 
     return eigvals_B_gs, spectral_radius
-
-
-def create_coarse_grid_correction_operator(A_h):
-    I_toFine = create_prolongation_matrix(A_h.shape[0]+1)
-    I_toCoarse = create_coarsening_matrix(A_h.shape[0]+1)
-    A_H = I_toCoarse @ A_h @ I_toFine
-    A_H_inv = np.linalg.inv(A_H)
-
-    M_cgc_inv = I_toFine @ A_H_inv @ I_toCoarse
-    return M_cgc_inv
-
-
-def create_coarse_grid_correction_error_propagation_matrix(A_h):
-    M_cgc_inv = create_coarse_grid_correction_operator(A_h)
-    B_cgc = np.eye(A_h.shape[0]) - M_cgc_inv @ A_h
-
-    return B_cgc
 
 
 def compute_series_of_ritz_values(sys_mat, residuals):
@@ -236,7 +179,6 @@ def experiments_exercise_2_3():
 
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
-    plt.legend()
     plt.legend(prop={'size': 6})
     # plt.grid(True)
     # plt.show()
@@ -484,7 +426,8 @@ def experiments_exercise_8_9():
             x = np.linspace(0, 1, grid_size)
             x = x[1:-1]
             A_h = create_discretized_helmholtz_matrix(grid_size, c_) / h**2
-            B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+            B_cgc = helmholtz_solvers.create_coarse_grid_correction_error_propagation_matrix(
+                A_h)
             eigvals_B_cgc = np.linalg.eigvals(B_cgc)
             spectral_radius = np.max(np.abs(eigvals_B_cgc))
             spectral_rads.append((c_, grid_size, spectral_radius))
@@ -520,6 +463,8 @@ def experiments_exercise_10():
 
     grid_sizes = [100, 1000]
 
+    figsize = (15, 8)
+    fig = plt.figure(figsize=figsize)
     with open("results_ex_10.txt", 'w') as f:
         for i, c_ in enumerate(c_values):
             for j, grid_size in enumerate(grid_sizes):
@@ -532,7 +477,7 @@ def experiments_exercise_10():
                 rhs = f_rhs(c_, x, h)
 
                 u_sol_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
-                    A_h, rhs_h=rhs, max_iterations=100, tol=1e-10, internal_solver='direct', residuals=residuals)
+                    A_h, rhs_h=rhs, max_iterations=10000, tol=1e-10, residuals=residuals)
 
                 # Check solution
                 u_exact = analytical_solution(x)
@@ -541,11 +486,13 @@ def experiments_exercise_10():
                         u_sol_cgc, u_exact), 0, atol=1e-6)
                 except:
                     print("Assertion failed")
+
                 rate_of_convergence = compute_rate_of_convergence(residuals)
-                B_cgc = create_coarse_grid_correction_error_propagation_matrix(
+                B_cgc = helmholtz_solvers.create_coarse_grid_correction_error_propagation_matrix(
                     A_h)
                 eigvals_B_cgc = np.linalg.eigvals(B_cgc)
                 spectral_radius = np.max(np.abs(eigvals_B_cgc))
+                compute_condition_number(A_h)
 
                 if convergence_flag_cgc:
                     lines = [f"(c, h) = ({c_}, {h})\n",
@@ -553,6 +500,18 @@ def experiments_exercise_10():
                              f"spectral rad.: {spectral_radius:.3E}\n"]
                     f.writelines(lines)
                     f.write('\n')
+
+            plt.plot(
+                [np.linalg.norm(residual, ord=2) for residual in residuals],
+                label=f"$(c,h)=({c_}, {h}), "+"$\rho(B_{{CGC}})=$"+f"{spectral_radius:.2E}")
+
+    plt.xlabel('# iterations')
+    plt.ylabel('2-norm of residual')
+    plt.legend(prop={'size': 6})
+    plt.semilogy()
+    plt.show()
+    fig.savefig("figures/plot_ex_10_convergence.pdf")
+    fig.savefig("figures/plot_ex_10_convergence.svg")
 
 
 def experiments_exercise_11():
@@ -573,7 +532,8 @@ def experiments_exercise_11():
                 grid_size, c_) / h**2
             rhs = f_rhs(c_, x, h)
 
-            M_cgc_inv = create_coarse_grid_correction_operator(A_h)
+            M_cgc_inv = helmholtz_solvers.create_coarse_grid_correction_M_inv(
+                A_h)
             projection = np.eye(A_h.shape[0]) - A_h @ M_cgc_inv
 
             P_A_h = projection @ A_h
@@ -601,8 +561,8 @@ def experiments_exercise_11():
     plt.ylabel('2-norm of residual')
     plt.legend()
     plt.semilogy()
-    plt.grid(True)
-    plt.show()
+    # plt.grid(True)
+    # plt.show()
     fig.savefig("figures/plot_ex_11_convergence.pdf")
     fig.savefig("figures/plot_ex_11_convergence.svg")
 
@@ -624,7 +584,8 @@ def experiments_exercise_12():
             rhs = f_rhs(c_, x, h)
 
             B_gs = create_gauss_seidel_error_propagation_matrix(A_h)
-            B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+            B_cgc = helmholtz_solvers.create_coarse_grid_correction_error_propagation_matrix(
+                A_h)
             B_gs_backwards = create_gauss_seidel_error_propagation_matrix(
                 A_h, backwards=True)
             B_tgm = B_gs_backwards @ B_cgc @ B_gs
@@ -689,7 +650,7 @@ if __name__ == "__main__":
     # Exercise 02, 03
     # experiments_exercise_2_3()
     # Exercise 04
-    experiments_exercise_4()
+    # experiments_exercise_4()
     # Exercise 05
     # experiments_exercise_5()
     # Exercise 06
@@ -700,7 +661,7 @@ if __name__ == "__main__":
     # Exercise 08, 09
     # experiments_exercise_8_9()
     # Exercise 10
-    # experiments_exercise_10()
+    experiments_exercise_10()
     # Exercise 11
     # experiments_exercise_11()
     # Exercise 12
