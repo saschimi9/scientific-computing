@@ -37,6 +37,29 @@ def compute_symmetric_ssor_preconditioner(A, omega):
 
     return M_ssor_inv
 
+def compute_symmetric_ssor_preconditioner_split(A, omega):
+    """Return the preconditioning matrix M_SGS(w)^{-1} for the symmetric successive over relaxation (SSOR)
+    with parameter $\omega$.
+
+    Args:
+        A (np.ndarray): System matrix NxN
+        omega (float): Overrelaxation parameter. Setting it to 1 leads to Symmetric Gauss-Seidel
+        precondioning
+    """
+    if not is_symmetric(A):
+        raise TypeError(
+            f"System matrix is not symmetric A[0:2,0:2]: {A[0:2,0:2]}")
+    D = np.diag(A)  # return 1-D array
+    D = np.diag(D)  # create 2-D matrix
+    E = -np.tril(A, k=-1)  # get lower triangle without diagonal
+    F = -np.triu(A, k=1)  # get upper triangle without diagonal
+
+    iden = np.eye(D.shape[0])
+    M1_ssor_inv = sp_la.solve_triangular((1/omega)*(D - E), iden, lower=True)
+    M2_ssor_inv = sp_la.solve_triangular((1/omega)*(D - F), iden)
+
+    return M1_ssor_inv, M2_ssor_inv
+
 
 def compute_gauss_seidel_M_inverse(A_h, backwards=False):
     n = A_h.shape[0]
@@ -221,6 +244,144 @@ def preconditioned_conjugate_gradient(A, rhs, M_inv=None, max_iterations=5000, t
 
     return u_sol, convergence_flag
 
+def preconditioned_conjugate_gradient_type2(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
+    """
+    Conjugate Gradient algorithm for a one-dimensional problem. 
+    Left preconditioning the system matrix A instead of the residual. 
+    -> convenient if N^2*(N + 1) < N^2 * iterations it takes to CG to converge.
+
+    Parameters:
+    - A: Symmetric positive definite matrix (1D array representing the diagonal elements).
+    - rhs: Right-hand side vector.
+    - M_inv: Inverted preconditioning matrix
+    - max_iterations: Maximum number of iterations.
+    - tol: Tolerance for convergence.
+    - residual: Empty list for residuals.
+
+    Returns:
+    - u_sol: Solution vector.
+    - convergence_flag: True if convergence was reached.
+    """
+    start_time = timer()
+    counter = 0
+    convergence_flag = False
+    n = len(rhs)
+    if M_inv is None:
+        M_inv = np.eye(n)
+    prec_A = M_inv @ A
+
+    u_sol = np.zeros(n)  # Initial guess
+    z_sol = np.zeros(n)
+    scp = 0
+    scp_old = 0
+    rhs = M_inv @ rhs
+    rhs_norm = np.linalg.norm(rhs, ord=2)
+    residual = rhs.copy()
+    if residuals is not None:
+        residuals.append(residual)
+
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
+        z_sol = residual
+        scp_old = scp
+        scp = np.dot(residual, z_sol)
+        if counter == 0:
+            p_sol = z_sol.copy()
+        else:
+            beta_k = scp / scp_old
+            p_sol = z_sol + beta_k * p_sol
+
+        prod_A_p_sol = prec_A @ p_sol
+        alpha_k = scp / np.dot(p_sol, prod_A_p_sol)
+        u_sol = u_sol + alpha_k * p_sol
+        residual = residual - alpha_k * prod_A_p_sol
+
+        if residuals is not None:
+            residuals.append(residual)
+
+        counter += 1
+
+    if counter >= max_iterations:
+        print(
+            f"Preconditioned CG solver did not converge after {max_iterations} iterations with M_inv {M_inv}.")
+    if np.linalg.norm(residual)/rhs_norm <= tol:
+        convergence_flag = True
+        print(
+            f"Prec. CG converged after {counter} iterations on size {A.shape}")
+
+    end_time = timer()
+    print(f'time spent: {end_time-start_time:.2g}')
+
+    return u_sol, convergence_flag
+
+def preconditioned_conjugate_gradient_type3(A, rhs, M_inv=None, max_iterations=5000, tol=1e-8, residuals=None):
+    """
+    Conjugate Gradient algorithm for a one-dimensional problem. 
+    Splitting the preconditioning matrix M = M1 * M2 such that the 
+    preconditioned system matrix is M1_inv * A * M2_inv.
+
+    Parameters:
+    - A: Symmetric positive definite matrix (1D array representing the diagonal elements).
+    - rhs: Right-hand side vector.
+    - M_inv: List of the inverted preconditioning matrices M1_inv and M2_inv.
+    - max_iterations: Maximum number of iterations.
+    - tol: Tolerance for convergence.
+    - residual: Empty list for residuals.
+
+    Returns:
+    - u_sol: Solution vector.
+    - convergence_flag: True if convergence was reached.
+    """
+    start_time = timer()
+    counter = 0
+    convergence_flag = False
+    n = len(rhs)
+    if len(M_inv) != 2:
+        raise TypeError(
+            f"Argument 'M_inv' needs to be a list of length 2, but has length {len(M_inv)}")
+    prec_A = M_inv[0] @ A @ M_inv[1]
+
+    u_sol = np.zeros(n)  # Initial guess
+    z_sol = np.zeros(n)
+    scp = 0
+    scp_old = 0
+    rhs = M_inv[0] @ rhs
+    rhs_norm = np.linalg.norm(rhs, ord=2)
+    residual = rhs.copy()
+    if residuals is not None:
+        residuals.append(residual)
+
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
+        z_sol = residual
+        scp_old = scp
+        scp = np.dot(residual, z_sol)
+        if counter == 0:
+            p_sol = z_sol.copy()
+        else:
+            beta_k = scp / scp_old
+            p_sol = z_sol + beta_k * p_sol
+
+        prod_A_p_sol = prec_A @ p_sol
+        alpha_k = scp / np.dot(p_sol, prod_A_p_sol)
+        u_sol = M_inv[1] @ (u_sol + alpha_k * p_sol)
+        residual = residual - alpha_k * prod_A_p_sol
+
+        if residuals is not None:
+            residuals.append(residual)
+
+        counter += 1
+
+    if counter >= max_iterations:
+        print(
+            f"Preconditioned CG solver did not converge after {max_iterations} iterations with M_inv {M_inv}.")
+    if np.linalg.norm(residual)/rhs_norm <= tol:
+        convergence_flag = True
+        print(
+            f"Prec. CG converged after {counter} iterations on size {A.shape}")
+
+    end_time = timer()
+    print(f'time spent: {end_time-start_time:.2g}')
+
+    return u_sol, convergence_flag
 
 def coarse_grid_correction(A_h, rhs_h, max_iterations=100, tol=1e-8, internal_solver='direct', num_presmoothing_iter=1, num_postsmoothing_iter=1, residuals=None):
     if internal_solver not in ['gs', 'cg', 'direct']:

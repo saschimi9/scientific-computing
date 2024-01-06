@@ -345,7 +345,7 @@ def experiments_exercise_5():
                     A)
                 M_ssor_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
                     A, 1.0)
-                prec_operator = M_ssor_inv * A
+                prec_operator = M_ssor_inv @ A
                 condition_number_prec_operator = np.linalg.cond(
                     prec_operator)
                 line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
@@ -406,8 +406,8 @@ def experiments_exercise_6():
 
 
 def experiments_exercise_7():
-    c = 1000
-    grid_size = 100
+    c = 10
+    grid_size = 500
 
     residuals = []
     h = 1/grid_size
@@ -416,18 +416,32 @@ def experiments_exercise_7():
     A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
     rhs = f_rhs(c, x, h)
 
-    M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner(
+    M1_sgs_inv, M2_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_preconditioner_split(
         A_h, omega=1.0)
 
-    prec_operator = np.matmul(M_sgs_inv, A_h)
+    # prec_operator = A_h
+    # -> uncomment when using unpreconditioned CG
+    prec_operator = M1_sgs_inv @ A_h @ M2_sgs_inv
+    # -> uncomment when using preconditioned CG
 
-    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
-        A_h, rhs=rhs, tol=1e-10, M_inv=None, residuals=residuals)
+    # preconditioning residuals - not used, doesn't work for ritz values
+    # u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
+    #    A_h, rhs=rhs, tol=1e-10, M_inv=None, residuals=residuals)
+
+    # not preconditioned CG
+    # u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_type2(
+    #    A_h, rhs=rhs, tol=1e-10, M_inv=None, residuals=residuals)
+
+    # preconditioned CG using split preconditioning
+    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_type3(
+        A_h, rhs=rhs, tol=1e-10, M_inv=[M1_sgs_inv, M2_sgs_inv], residuals=residuals)
+
     assert convergence_flag  # "Problem did not converge"
 
     series_of_ritz_values = compute_series_of_ritz_values(
-        A_h, residuals)
-    prec_operator_eigenvalues = np.linalg.eigvals(A_h)
+        prec_operator, residuals)
+    prec_operator_eigenvalues = np.linalg.eigvals(prec_operator)
+    print("Compute Ritz values done")
 
     # Check solution
     u_exact = analytical_solution(x)
@@ -452,8 +466,8 @@ def experiments_exercise_7():
     # plt.semilogy()
     plt.legend()
     plt.show()
-    fig.savefig("figures/plot_ex_7_ritz_values.pdf")
-    fig.savefig("figures/plot_ex_7_ritz_values.svg")
+    fig.savefig("../figures/plot_ex_7_ritz_values.pdf")
+    fig.savefig("../figures/plot_ex_7_ritz_values.svg")
 
 
 def experiments_exercise_8_9():
