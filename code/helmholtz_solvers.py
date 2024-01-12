@@ -1,5 +1,4 @@
 import numpy as np
-import take_home_exam
 import scipy.linalg as sp_la
 from timeit import default_timer as timer
 
@@ -480,6 +479,7 @@ def iterative_solve(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, residuals
 
     return u_sol, counter
 
+
 def iterative_solve_conv(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, residuals=None):
     counter = 0
     rhs_norm = np.linalg.norm(rhs_h, ord=2)
@@ -502,8 +502,8 @@ def iterative_solve_conv(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, resi
         counter += 1
 
     if counter >= max_iterations:
-            print(
-                f"GS solver did not converge after {max_iterations} iterations")
+        print(
+            f"GS solver did not converge after {max_iterations} iterations")
     if np.linalg.norm(residual)/rhs_norm <= tol:
         convergence_flag = True
         print(f"GS converged after {counter} iterations on size {A.shape}")

@@ -282,7 +282,7 @@ def experiments_exercise_5():
                 h = 1/grid_size
                 A = create_discretized_helmholtz_matrix(
                     size=grid_size, c=c)/h**2
-                condition_number_A, = compute_condition_number(
+                condition_number_A = compute_condition_number(
                     A)
                 M_ssor_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
                     A, 1.0)
@@ -350,8 +350,8 @@ def experiments_exercise_6(prec_type, var):
     plt.legend(fontsize=14.5, loc='lower left')
     plt.semilogy()
     plt.grid(True)
-    fig.savefig(f"../figures/plot_ex_6_convergence_prec_{prec_type}_{var}.pdf")
-    fig.savefig(f"../figures/plot_ex_6_convergence_prec_{prec_type}_{var}.svg")
+    fig.savefig(f"figures/plot_ex_6_convergence_prec_{prec_type}_{var}.pdf")
+    fig.savefig(f"figures/plot_ex_6_convergence_prec_{prec_type}_{var}.svg")
 
 
 def experiments_exercise_7():
@@ -399,8 +399,8 @@ def experiments_exercise_7():
                  series_of_ritz_value, color=color)
     plt.ylabel('real part')
     plt.legend(fontsize=15)
-    fig.savefig("../figures/plot_ex_7c_ritz_values.svg")
-    fig.savefig("../figures/plot_ex_7c_ritz_values.pdf")
+    fig.savefig("figures/plot_ex_7c_ritz_values.svg")
+    fig.savefig("figures/plot_ex_7c_ritz_values.pdf")
 
     # plot the max and the min eigenvalues of every T_k matrix and the eigenvalues of the (preconditioned) system
     fig = plt.figure(figsize=(16, 8))
@@ -415,8 +415,8 @@ def experiments_exercise_7():
     plt.xlabel('# iterations')
     plt.ylabel('real part')
     plt.legend(fontsize=15)
-    fig.savefig("../figures/plot_ex_7b_ritz_values.pdf")
-    fig.savefig("../figures/plot_ex_7b_ritz_values.svg")
+    fig.savefig("figures/plot_ex_7b_ritz_values.pdf")
+    fig.savefig("figures/plot_ex_7b_ritz_values.svg")
 
 
 def experiments_exercise_8_9():
@@ -837,7 +837,7 @@ if __name__ == "__main__":
     # Exercise 05
     experiments_exercise_5()
     # Exercise 06
-    experiments_exercise_6()
+    experiments_exercise_6(var='h', prec_type='explicit')
     # Exercise 07
     experiments_exercise_7()
     # Exercise 08, 09
