@@ -480,6 +480,36 @@ def iterative_solve(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, residuals
 
     return u_sol, counter
 
+def iterative_solve_conv(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, residuals=None):
+    counter = 0
+    rhs_norm = np.linalg.norm(rhs_h, ord=2)
+    u_sol = np.zeros(A_h.shape[1])
+    u_sol_min_1 = np.copy(u_sol)
+    u_sol_min_2 = np.copy(u_sol) + tol
+    rel_errors = []
+    residual = rhs_h - A_h @ u_sol
+    convergence_flag = False
+
+    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
+        u_sol = u_sol + M_inv @ residual
+        residual = rhs_h - A_h @ u_sol
+        if residuals is not None:
+            residuals.append(residual)
+        rel_errors.append(np.linalg.norm(u_sol - u_sol_min_1) /
+                          np.linalg.norm(u_sol_min_1 - u_sol_min_2))
+        u_sol_min_2 = np.copy(u_sol_min_1)
+        u_sol_min_1 = np.copy(u_sol)
+        counter += 1
+
+    if counter >= max_iterations:
+            print(
+                f"GS solver did not converge after {max_iterations} iterations")
+    if np.linalg.norm(residual)/rhs_norm <= tol:
+        convergence_flag = True
+        print(f"GS converged after {counter} iterations on size {A.shape}")
+
+    return u_sol, rel_errors, convergence_flag
+
 
 def gauss_seidel_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=None):
     start_time = timer()
