@@ -51,12 +51,18 @@ def compute_condition_number(A):
     return condition_number_A
 
 
-def compute_effective_condition_number(A):
-    if is_symmetric(A):
-        eig_vals = np.linalg.eigvals(A)
-        eig_vals = np.array(
-            [eig_val for eig_val in eig_vals if np.abs(eig_val) > 1e-12])
-        condition_number_A = np.max(np.abs(eig_vals))/np.min(np.abs(eig_vals))
+def compute_effective_condition_number(M, u_sol, u_0):
+    if is_symmetric(M):
+        lhs = u_sol - u_0
+        eig_vals, eig_vecs = np.linalg.eig(M)
+        gammas = np.zeros(eig_vals.shape)
+        for i, eig_vec in enumerate(eig_vecs):
+            gammas[i] = np.dot(eig_vec, lhs)
+        eig_vals_nonzero = eig_vals[np.where(gammas > 1e-14)]
+
+        alpha = np.min(eig_vals_nonzero)
+        beta = np.max(eig_vals_nonzero)
+        condition_number_A = beta/alpha
     else:
         raise TypeError(
             "Input A is not symmetric and thus inv(M_ssor)*A is not symmetric")
@@ -462,21 +468,15 @@ def experiments_exercise_10():
         for i, c_ in enumerate(c_values):
             for j, grid_size in enumerate(grid_sizes):
                 residuals = []
-                residuals_ssor = []
                 h = 1/grid_size
                 x = np.linspace(0, 1, grid_size+1)
                 x = x[1:-1]
                 A_h = create_discretized_helmholtz_matrix(
                     grid_size, c_) / h**2
                 rhs = f_rhs(c_, x, h)
-                M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
-                    A_h, 1.0)
-                M_inv_A_h = M_sgs_inv @ A_h
-                M_inv_rhs_h = M_sgs_inv @ rhs
+
                 u_sol_cgc, convergence_flag_cgc = helmholtz_solvers.coarse_grid_correction(
-                    M_inv_A_h, rhs_h=M_inv_rhs_h, max_iterations=10000, tol=1e-10, residuals=residuals)
-                u_sol_ssor, _ = helmholtz_solvers.ssor_solver(
-                    M_inv_A_h, M_inv_rhs_h, max_iterations=10000, tol=1e-10, omega=1.0, residuals=residuals_ssor)
+                    A_h=A_h, rhs_h=rhs, max_iterations=10, tol=1e-10, residuals=residuals)
 
                 # Check solution
                 u_exact = analytical_solution(x)
@@ -503,10 +503,6 @@ def experiments_exercise_10():
             plt.plot(
                 [np.linalg.norm(residual, ord=2) for residual in residuals],
                 label=f"(c,h)=({c_}, {h}), "+"$\\rho(B_{CGC})=$"+f"{spectral_radius:.2E}")
-            plt.plot(
-                [np.linalg.norm(residual, ord=2)
-                 for residual in residuals_ssor],
-                label=f"(c,h)=({c_}, {h}), "+"$\\rho(B_{SSOR})=$"+f"{spectral_radius:.2E}")
 
     plt.xlabel('# iterations')
     plt.ylabel('2-norm of residual')
@@ -518,7 +514,7 @@ def experiments_exercise_10():
 
 
 def experiments_exercise_11():
-    c_values = [0.1, 1, 10, 100, 1000]
+    c_values = [-50, -1, 0.1, 1, 10, 100, 1000]
 
     grid_sizes = [10, 100, 1000]
     # colors = cm.viridis(np.linspace(0, 1, len(c_values)*len(grid_sizes)))
@@ -541,8 +537,8 @@ def experiments_exercise_11():
 
             P_A_h = projection @ A_h
             P_rhs_h = projection @ rhs
-            M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
-                P_A_h, omega=1.0)
+            # M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(
+            #     P_A_h, omega=1.0)
             # A u = f -> u -> P A x = P f -> P A x = Pf = PA u
             u_sol, convergence_flag_cg = helmholtz_solvers.preconditioned_conjugate_gradient(
                 A=A_h, rhs=rhs, max_iterations=1000, tol=1e-12, residuals=residuals1)
@@ -552,17 +548,18 @@ def experiments_exercise_11():
             # Check solution
             u_exact = analytical_solution(x)
 
-            cond_A = compute_effective_condition_number(P_A_h)
-            cond_prec = np.linalg.cond(P_A_h)
+            cond_P_A_h = compute_effective_condition_number(
+                P_A_h, u_sol=u_sol, u_0=np.zeros(u_sol.shape))
+            # cond_prec = np.linalg.cond(P_A_h)
 
             plt.plot(
                 [np.linalg.norm(residual, ord=2) for residual in residuals],
-                label=f"$(c,h)=({c_}, {h}), \kappa_{{eff,2}}={cond_A:.2E}$")
-        plot_solutions(x, u_exact, *[("Projected CG", u_sol_cg)])
+                label=f"$(c,h)=({c_}, {h}), \kappa_{{eff,2}}={cond_P_A_h:.2E}$")
+        # plot_solutions(x, u_exact, *[("Projected CG", u_sol_cg)])
 
     plt.xlabel('# iterations')
     plt.ylabel('2-norm of residual')
-    plt.legend()
+    plt.legend(prop={'size': 6})
     plt.semilogy()
     # plt.grid(True)
     # plt.show()
@@ -703,7 +700,7 @@ if __name__ == "__main__":
     # Exercise 10
     # experiments_exercise_10()
     # Exercise 11
-    # experiments_exercise_11()
+    experiments_exercise_11()
     # Exercise 12
     # experiments_exercise_12()
-    experiments_exercise_12_4()
+    # experiments_exercise_12_4()

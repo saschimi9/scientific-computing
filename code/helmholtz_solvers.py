@@ -8,6 +8,12 @@ def is_symmetric(A):
     return np.allclose(A, np.transpose(A), rtol=1e-5, atol=1e-5)
 
 
+def spectral_radius(M):
+    eigvals = np.linalg.eigvals(M)
+    spectral_radius = np.max(np.abs(eigvals))
+    return spectral_radius
+
+
 def compute_symmetric_ssor_M_inv(A, omega):
     """Return the preconditioning matrix M_SGS(w)^{-1} for the symmetric successive over relaxation (SSOR)
     with parameter $\omega$.
@@ -413,18 +419,19 @@ def create_coarsening_matrix(size):
     size_coarse = size_fine // 2
 
     coarsening_matrix = np.zeros((size_coarse, size_fine))
-
     # Fill the diagonal with ones
-    coarsening_matrix[np.arange(size_coarse),
+    coarsening_matrix[np.arange(0, size_coarse),
                       np.arange(0, size_fine - 2, 2)] = 1
 
     # Fill the upper diagonal with twos
-    coarsening_matrix[np.arange(size_coarse),
+    coarsening_matrix[np.arange(0, size_coarse),
                       np.arange(1, size_fine - 1, 2)] = 2
 
     # Fill the second upper diagonal with ones
-    coarsening_matrix[np.arange(size_coarse),
+    coarsening_matrix[np.arange(0, size_coarse),
                       np.arange(2, size_fine, 2)] = 1
+    # coarsening_matrix[0, 0] = 4
+    # coarsening_matrix[-1, -1] = 4
 
     return coarsening_matrix/4
 
@@ -434,7 +441,10 @@ def create_prolongation_matrix(size):
     Uses `create_coarsening_matrix` and returns the transpose of the matrix
     multiplied by 2
     """
-    return 2 * np.transpose(create_coarsening_matrix(size))
+    prolongation_matrix = 2 * np.transpose(create_coarsening_matrix(size))
+    # prolongation_matrix[0, 0] = 1
+    # prolongation_matrix[-1, -1] = 1
+    return prolongation_matrix
 
 
 def create_coarse_grid_correction_M_inv(A_h):
@@ -454,30 +464,36 @@ def create_coarse_grid_correction_error_propagation_matrix(A_h):
     return B_cgc
 
 
-def gauss_seidel_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=None):
-    start_time = timer()
+def iterative_solve(A_h, rhs_h, M_inv, max_iterations=10000, tol=1e-8, residuals=None):
     counter = 0
-    convergence_flag = False
     rhs_norm = np.linalg.norm(rhs_h, ord=2)
-
     u_sol = rhs_h.copy()
+
     residual = rhs_h - A_h @ u_sol
 
-    M_GS_inv = create_gauss_seidel_M_inv(A_h)
-    B_gs = create_gauss_seidel_error_propagation_matrix(A_h)
-    rhs_prec = M_GS_inv @ rhs_h
-
     while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
-        u_sol = B_gs @ u_sol + rhs_prec
+        u_sol = u_sol + M_inv @ residual
         residual = rhs_h - A_h @ u_sol
         if residuals is not None:
             residuals.append(residual)
         counter += 1
 
+    return u_sol, counter
+
+
+def gauss_seidel_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=None):
+    start_time = timer()
+    convergence_flag = False
+
+    M_GS_inv = create_gauss_seidel_M_inv(A_h)
+
+    u_sol, counter = iterative_solve(
+        A_h, rhs_h, M_GS_inv, max_iterations=10000, tol=1e-8, residuals=None)
+
     if counter >= max_iterations:
         print(
             f"matrix GS solver did not converge after {max_iterations} iterations.")
-    if np.linalg.norm(rhs_h - A_h @ u_sol)/rhs_norm <= tol:
+    if np.linalg.norm(rhs_h - A_h @ u_sol)/np.linalg.norm(rhs_h) <= tol:
         convergence_flag = True
         print(
             f"matrix GS converged after {counter} iterations on size {A_h.shape}")
@@ -489,23 +505,19 @@ def gauss_seidel_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=No
 
 def coarse_grid_correction(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals=None):
     start_time = timer()
-    counter = 0
     convergence_flag = False
     rhs_norm = np.linalg.norm(rhs_h, ord=2)
 
     u_sol = rhs_h.copy()
-    residual = rhs_h - A_h @ u_sol
 
     M_CGC_inv = create_coarse_grid_correction_M_inv(A_h)
-    rhs_prec = M_CGC_inv @ rhs_h
-    B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
+    B_CGC = np.eye(M_CGC_inv.shape[0]) - M_CGC_inv @ A_h
+    print(f"rho(B_CGC): {spectral_radius(B_CGC)}")
+    # rhs_prec = M_CGC_inv @ rhs_h
+    # B_cgc = create_coarse_grid_correction_error_propagation_matrix(A_h)
 
-    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
-        u_sol = B_cgc @ u_sol + rhs_prec
-        residual = rhs_h - A_h @ u_sol
-        if residuals is not None:
-            residuals.append(residual)
-        counter += 1
+    u_sol, counter = iterative_solve(
+        A_h, rhs_h, M_CGC_inv, 100, 1e-8, residuals)
 
     if counter >= max_iterations:
         print(
@@ -520,25 +532,32 @@ def coarse_grid_correction(A_h, rhs_h, max_iterations=10000, tol=1e-8, residuals
 
 
 def create_two_grid_method_M_inv(A_h):
-    M_bgs_inv = create_gauss_seidel_M_inv(A_h, backwards=True)
-    M_fgs_inv = create_gauss_seidel_M_inv(A_h)
-    M_cgc_inv = create_coarse_grid_correction_M_inv(A_h)
-    M_tgm_inv = np.zeros(M_cgc_inv.shape)
-    M_tgm_inv = M_bgs_inv + M_tgm_inv + M_fgs_inv
+    M_b = create_gauss_seidel_M_inv(A_h, backwards=True)
+    M_f = create_gauss_seidel_M_inv(A_h)
+    M_c = create_coarse_grid_correction_M_inv(A_h)
+    M_t = np.zeros(M_c.shape)
+    """
+    M_T = M_f + M_c + M_b - M_c @ A @ M_f - M_b @ A @ M_f - M_b @ A @ M_c + M_b @ A @ M_c @ A @ M_f
+    """
+    # M_t = M_b + M_t + M_f
 
-    M_bgs_A = M_bgs_inv @ A_h
-    A_M_fgs = A_h @ M_fgs_inv
+    # M_bgs_A = M_b @ A_h
+    # A_M_fgs = A_h @ M_f
 
-    M1 = M_bgs_A @ M_cgc_inv
-    M2 = M_bgs_A @ M_fgs_inv
-    M3 = M1 @ A_M_fgs
-    M4 = M_cgc_inv @ A_M_fgs
+    # M1 = M_bgs_A @ M_c
+    # M2 = M_bgs_A @ M_f
+    # M3 = M1 @ A_M_fgs
+    # M4 = M_c @ A_M_fgs
 
-    M_tgm_inv += M1 + M2
-    M3 += M4
-    M_tgm_inv += M3
+    # M_t += M1 + M2
+    # M3 += M4
+    # M_t += M3
+    M_cAf = M_c @ A_h @ M_f
+    M_bA = M_b @ A_h
+    M_t = M_f + M_c + M_b
+    M_t += - M_cAf - M_bA @ M_f - M_bA @ M_c + M_bA @ M_cAf
 
-    return M_tgm_inv
+    return M_t
 
 
 def create_error_propagation_matrix_two_grid(A_h):
@@ -559,17 +578,9 @@ def two_grid_method_matrix(A_h, rhs_h, max_iterations=10000, tol=1e-8, num_presm
     nu2 = num_postsmoothing_iter
 
     M_TGM_inv = create_two_grid_method_M_inv(A_h)
-    rhs_prec = M_TGM_inv @ rhs_h
-    B_tgm = create_error_propagation_matrix_two_grid(A_h)
-    u_sol = np.copy(rhs_h)
-    residual = rhs_h - A_h @ u_sol
 
-    while np.linalg.norm(residual)/rhs_norm > tol and counter < max_iterations:
-        u_sol = B_tgm @ u_sol + rhs_prec
-        residual = rhs_h - A_h @ u_sol
-        if residuals is not None:
-            residuals.append(residual)
-        counter += 1
+    u_sol, convergence_flag = iterative_solve(
+        A_h=A_h, rhs_h=rhs_h, M_inv=M_TGM_inv, residuals=residuals)
 
     if counter >= max_iterations:
         print(
