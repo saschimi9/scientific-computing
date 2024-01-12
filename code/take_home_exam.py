@@ -669,6 +669,41 @@ def experiments_exercise_12_4():
     fig.savefig("figures/plot_ex_12_4_convergence.pdf")
     fig.savefig("figures/plot_ex_12_4_convergence.svg")
 
+def experiments_exercise_12_4a():
+    c_values = [0.01, 0.1, 1, 10]
+    grid_sizes = [10, 100, 1000]
+
+    with open("results_ex_12_4a.txt", 'w') as f:
+        for c_ in c_values:
+            for grid_size in grid_sizes:
+                rel_errors = []
+                h = 1/grid_size
+                x = np.linspace(0, 1, grid_size+1)
+                x = x[1:-1]
+                h = 1/grid_size
+                spectral_rads=[]
+                A_h = create_discretized_helmholtz_matrix(grid_size, c_)/h**2
+                B_tgm = new_helmholtz_solvers.create_error_propagation_matrix_two_grid(
+                A_h)
+
+                eigvals_B_tgm = np.linalg.eigvals(B_tgm)
+                spectral_radius = np.max(np.abs(eigvals_B_tgm))
+                spectral_rads.append((c_, grid_size, spectral_radius))
+                rhs = f_rhs(c_, x, h)
+                M_inv_tgm = new_helmholtz_solvers.create_error_propagation_matrix_two_grid(A_h)
+                u_sol, rel_errors, convergence_flag = new_helmholtz_solvers.iterative_solve_conv(
+                    A_h, rhs, M_inv_tgm, tol=1e-6, max_iterations=10000)
+                if convergence_flag:
+                    lines = [f"(c, h) = ({c_}, {h})\n",
+                             f"rate of convergence: {rel_errors[len(rel_errors)-5]:.3E}\n",
+                             f"spectral rad.: {spectral_radius:.3E}\n",
+                             f"min rate: {min(rel_errors):.3E}\n",
+                             f"avg. rate: {np.average(np.array(rel_errors)[2:-2]):.3E}\n"]
+                    f.writelines(lines)
+                    f.write('\n')
+                else:
+                    f.write(f"Convergence failed for (c, h) = ({c_}, h={h})\n")
+
 
 if __name__ == "__main__":
     # Example usage:
