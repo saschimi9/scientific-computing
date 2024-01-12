@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import helmholtz_solvers
-import scipy.linalg as sp_la
 from helmholtz_problem import create_discretized_helmholtz_matrix, analytical_solution, f_rhs
 
 
@@ -53,20 +52,25 @@ def compute_condition_number(A):
 
 def compute_effective_condition_number(M, u_sol, u_0):
     if is_symmetric(M):
-        lhs = u_sol - u_0
-        eig_vals, eig_vecs = np.linalg.eig(M)
-        gammas = np.zeros(eig_vals.shape)
-        for i, eig_vec in enumerate(eig_vecs):
-            gammas[i] = np.dot(eig_vec, lhs)
-        eig_vals_nonzero = eig_vals[np.where(gammas > 1e-14)]
+        # Reader effective condition number does not work
+        # lhs = u_sol - u_0
+        # eig_vals, eig_vecs = np.linalg.eig(M)
+        # gammas = np.zeros(eig_vals.shape)
+        # for i, eig_vec in enumerate(eig_vecs):
+        #     gammas[i] = np.dot(eig_vec, lhs)
+        # eig_vals_nonzero = eig_vals[np.where(gammas > 1e-14)]
 
-        alpha = np.min(eig_vals_nonzero)
-        beta = np.max(eig_vals_nonzero)
-        condition_number_A = beta/alpha
+        # alpha = np.min(eig_vals_nonzero)
+        # beta = np.max(eig_vals_nonzero)
+        # condition_number_A = beta/alpha
+        eig_vals = np.linalg.eigvals(M)
+        min_eigval = np.min(np.abs(eig_vals[eig_vals > 1e-8]))
+        max_eigval = np.max(np.abs(eig_vals[eig_vals > 1e-8]))
+        condition_number_M = max_eigval/min_eigval
     else:
         raise TypeError(
             "Input A is not symmetric and thus inv(M_ssor)*A is not symmetric")
-    return condition_number_A
+    return condition_number_M
 
 
 def compute_eigenvals_gauss_seidel_error_propagation_matrix(A_h):
@@ -104,15 +108,20 @@ def compute_series_of_ritz_values(sys_mat, residuals):
 
     assert T_k_matrices[0].shape == (1, 1)  # "should be k x N x N x k == 1
 
+    ritz_value_min = []
+    ritz_value_max = []
     for T_k_matrix in T_k_matrices:
-        ritz_values.append(np.linalg.eigvals(T_k_matrix))
+        eig_vals = np.linalg.eigvals(T_k_matrix)
+        ritz_values.append(eig_vals)
+        ritz_value_min.append(min(eig_vals))
+        ritz_value_max.append(max(eig_vals))
 
     series_of_ritz_values = []
     for ritz_values_ith_iter in ritz_values:
         series_of_ritz_values.append([])
         for j, ritz_value in enumerate(ritz_values_ith_iter):
             series_of_ritz_values[j].append(ritz_value)
-    return series_of_ritz_values
+    return series_of_ritz_values, ritz_value_max, ritz_value_min
 
 
 def experiments_exercise_1():
@@ -145,13 +154,10 @@ def experiments_exercise_1():
     ax.set_xticks([y + 1 for y in range(len(solutions))],
                   labels=labels)
     # Only plot the last exact solution
-    # plt.title('Helmholtz Equation: Point-wise error between analytical and numerical solution')
     plt.xlabel('$x$')
     plt.ylabel('$|u(x) - u^h(x)|$')
     plt.legend()
     plt.semilogy()
-    # plt.grid(True)
-    # plt.show()
     plt.savefig("figures/plot_ex_1_pointwise_error_01.pdf")
     plt.savefig("figures/plot_ex_1_pointwise_error_01.svg")
 
@@ -179,8 +185,6 @@ def experiments_exercise_2_3():
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
     plt.legend(prop={'size': 6})
-    # plt.grid(True)
-    # plt.show()
     plt.savefig("figures/plot_ex_2_3_eigenvalues_01.pdf")
     plt.savefig("figures/plot_ex_2_3_eigenvalues_01.svg")
 
@@ -204,8 +208,6 @@ def experiments_exercise_2_3():
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
     plt.legend()
-    # plt.grid(True)
-    # plt.show()
     plt.savefig("figures/plot_ex_2_3_eigenvalues_02.pdf")
     plt.savefig("figures/plot_ex_2_3_eigenvalues_02.svg")
 
@@ -229,8 +231,6 @@ def experiments_exercise_2_3():
     plt.xlabel('Real part')
     plt.ylabel('Imag part')
     plt.legend()
-    # plt.grid(True)
-    # plt.show()
     plt.savefig("figures/plot_ex_2_3_eigenvalues_03.pdf")
     plt.savefig("figures/plot_ex_2_3_eigenvalues_03.svg")
 
@@ -294,12 +294,12 @@ def experiments_exercise_5():
 
 
 def experiments_exercise_6(prec_type, var):
-# prec_type: type of preconditioning in the CG method. Options:
-#    - explicit
-#    - residuals
-# var : variable to test multiple values of ( for plotting purposes ). Options:
-#    - c
-#    - h
+    # prec_type: type of preconditioning in the CG method. Options:
+    #    - explicit
+    #    - residuals
+    # var : variable to test multiple values of ( for plotting purposes ). Options:
+    #    - c
+    #    - h
     if var == 'c':
         c_values = [0.01, 0.1, 1, 10, 100, 1000]
         grid_sizes = [1000]
@@ -313,9 +313,7 @@ def experiments_exercise_6(prec_type, var):
 
     for c in c_values:
         for grid_size in grid_sizes:
-            residuals_uncond = []
             residuals = []
-            ritz_values = []
             h = 1/grid_size
             x = np.linspace(0, 1, grid_size+1)
             x = x[1:-1]
@@ -328,10 +326,10 @@ def experiments_exercise_6(prec_type, var):
 
             # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
             #     A, rhs, residuals=residuals_uncond)
-            if prec_type=='explicit':
+            if prec_type == 'explicit':
                 u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_type2(
                     A_h, rhs=rhs, M_inv=M_sgs_inv, tol=1e-10, residuals=residuals)
-            elif prec_type=='residuals':
+            elif prec_type == 'residuals':
                 u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
                     A_h, rhs=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)
             else:
@@ -339,7 +337,7 @@ def experiments_exercise_6(prec_type, var):
 
             # Check solution
             u_exact = analytical_solution(x)
-            #assert np.isclose(calculate_rmse(
+            # assert np.isclose(calculate_rmse(
             #    u_sol, u_exact), 0, atol=1e-7)
 
             cond_A = compute_condition_number(A_h)
@@ -352,7 +350,6 @@ def experiments_exercise_6(prec_type, var):
     plt.legend(fontsize=14.5, loc='lower left')
     plt.semilogy()
     plt.grid(True)
-    plt.show()
     fig.savefig(f"../figures/plot_ex_6_convergence_prec_{prec_type}_{var}.pdf")
     fig.savefig(f"../figures/plot_ex_6_convergence_prec_{prec_type}_{var}.svg")
 
@@ -371,49 +368,56 @@ def experiments_exercise_7():
     # split preconditioning - doesn't work
     # M1_sgs_inv, M2_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv_split(
     #    A_h, omega=1.0)
-    #u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_type3(
+    # u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient_type3(
     #    A_h, rhs=rhs, tol=1e-10, M_inv=[M1_sgs_inv, M2_sgs_inv], residuals=residuals) # if sys not prec, M_sgs_inv=None
-    #prec_operator = M1_sgs_inv @ A_h @ M2_sgs_inv
+    # prec_operator = M1_sgs_inv @ A_h @ M2_sgs_inv
 
     # residual preconditioning
     M_sgs_inv = helmholtz_solvers.compute_symmetric_ssor_M_inv(A_h, omega=1.0)
-    prec_operator = np.matmul(M_sgs_inv, A_h) 
+    prec_operator = np.matmul(M_sgs_inv, A_h)
 
     u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
-        A_h, rhs=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals) # if sys not prec, M_sgs_inv=None
+        A_h, rhs=rhs, tol=1e-10, M_inv=M_sgs_inv, residuals=residuals)  # if sys not prec, M_sgs_inv=None
     assert convergence_flag  # "Problem did not converge"
 
     series_of_ritz_values, ritz_values_max, ritz_values_min = compute_series_of_ritz_values(
-        prec_operator, residuals) # if sys not preconditioned just use A_h
-    prec_operator_eigenvalues = np.linalg.eigvals(prec_operator) #if sys not preconditioned, just use A_h
+        prec_operator, residuals)  # if sys not preconditioned just use A_h
+    prec_operator_eigenvalues = np.linalg.eigvals(
+        prec_operator)  # if sys not preconditioned, just use A_h
     max_eigval = np.max(prec_operator_eigenvalues)
     min_eigval = np.min(prec_operator_eigenvalues)
 
     # plot the sequences of ritz values and the eigenvalues of the (preconditioned) system
     colors = cm.viridis(np.linspace(0, 1, len(series_of_ritz_values)))
     fig = plt.figure(figsize=(16, 8))
-    plt.scatter(np.ones(len(prec_operator_eigenvalues)), sorted(prec_operator_eigenvalues), label="eigenvalues A", color = 'tab:orange')
-    sorted_series_of_ritz_values=sorted(series_of_ritz_values, key=lambda x: x[-1])
+    plt.scatter(np.ones(len(prec_operator_eigenvalues)), sorted(
+        prec_operator_eigenvalues), label="eigenvalues A", color='tab:orange')
+    sorted_series_of_ritz_values = sorted(
+        series_of_ritz_values, key=lambda x: x[-1])
     for i, (series_of_ritz_value, color) in enumerate(zip(sorted_series_of_ritz_values, colors)):
-        plt.plot(np.linspace(0, 1, len(series_of_ritz_value)), series_of_ritz_value, color=color)
+        plt.plot(np.linspace(0, 1, len(series_of_ritz_value)),
+                 series_of_ritz_value, color=color)
     plt.ylabel('real part')
     plt.legend(fontsize=15)
-    plt.show()
     fig.savefig("../figures/plot_ex_7c_ritz_values.svg")
     fig.savefig("../figures/plot_ex_7c_ritz_values.pdf")
-    
-    # plot the max and the min eigenvalues of every T_k matrix and the eigenvalues of the (preconditioned) system   
+
+    # plot the max and the min eigenvalues of every T_k matrix and the eigenvalues of the (preconditioned) system
     fig = plt.figure(figsize=(16, 8))
-    plt.scatter(len(ritz_values_max)-1, max_eigval, label="max eig A", marker = 'o', color='tab:orange')
-    plt.scatter(len(ritz_values_max)-1, min_eigval, label="min eig A" , marker = 'o' , color='tab:orange')
-    plt.plot(ritz_values_max, label=f"max Ritz value", marker = '.', fillstyle='none', color='tab:cyan', markersize=5 )
-    plt.plot(ritz_values_min, label=f"min Ritz value", marker = '.', fillstyle='none', color='tab:cyan', markersize=5) 
-    plt.xlabel('# iterations') 
+    plt.scatter(len(ritz_values_max)-1, max_eigval,
+                label="max eig A", marker='o', color='tab:orange')
+    plt.scatter(len(ritz_values_max)-1, min_eigval,
+                label="min eig A", marker='o', color='tab:orange')
+    plt.plot(ritz_values_max, label=f"max Ritz value", marker='.',
+             fillstyle='none', color='tab:cyan', markersize=5)
+    plt.plot(ritz_values_min, label=f"min Ritz value", marker='.',
+             fillstyle='none', color='tab:cyan', markersize=5)
+    plt.xlabel('# iterations')
     plt.ylabel('real part')
     plt.legend(fontsize=15)
-    plt.show()
     fig.savefig("../figures/plot_ex_7b_ritz_values.pdf")
     fig.savefig("../figures/plot_ex_7b_ritz_values.svg")
+
 
 def experiments_exercise_8_9():
     c_values = [0.1, 1, 10, 100, 1000]
@@ -511,7 +515,6 @@ def experiments_exercise_10():
     plt.ylabel('2-norm of residual', fontsize=20)
     plt.legend(fontsize=18)
     plt.semilogy()
-    plt.show()
     fig.savefig("figures/plot_ex_10_convergence.pdf")
     fig.savefig("figures/plot_ex_10_convergence.svg")
 
@@ -553,7 +556,7 @@ def experiments_exercise_11():
 
             cond_P_A_h = compute_effective_condition_number(
                 P_A_h, u_sol=u_sol, u_0=np.zeros(u_sol.shape))
-            # cond_prec = np.linalg.cond(P_A_h)
+            print("cond_prec:", np.linalg.cond(P_A_h))
 
             plt.plot(
                 [np.linalg.norm(residual, ord=2) for residual in residuals],
@@ -562,10 +565,8 @@ def experiments_exercise_11():
 
     plt.xlabel('# iterations')
     plt.ylabel('2-norm of residual')
-    plt.legend(prop={'size': 6})
+    plt.legend(prop={'size': 4})
     plt.semilogy()
-    # plt.grid(True)
-    # plt.show()
     fig.savefig("figures/plot_ex_11_convergence.pdf")
     fig.savefig("figures/plot_ex_11_convergence.svg")
 
@@ -664,81 +665,190 @@ def experiments_exercise_12_4():
     plt.ylabel('2-norm of residual')
     plt.legend(prop={'size': 6})
     plt.semilogy()
-    # plt.grid(True)
-    plt.show()
     fig.savefig("figures/plot_ex_12_4_convergence.pdf")
     fig.savefig("figures/plot_ex_12_4_convergence.svg")
 
+
 def experiments_exercise_12_4a():
-    c_values = [0.01, 0.1, 1, 10]
+    c_values = [0.01, 0.1, 1, 10, 100]
     grid_sizes = [10, 100, 1000]
 
     with open("results_ex_12_4a.txt", 'w') as f:
         for c_ in c_values:
             for grid_size in grid_sizes:
-                rel_errors = []
+                residuals = []
                 h = 1/grid_size
                 x = np.linspace(0, 1, grid_size+1)
                 x = x[1:-1]
                 h = 1/grid_size
-                spectral_rads=[]
+                spectral_rads = []
                 A_h = create_discretized_helmholtz_matrix(grid_size, c_)/h**2
-                B_tgm = new_helmholtz_solvers.create_error_propagation_matrix_two_grid(
-                A_h)
+                B_tgm = helmholtz_solvers.create_error_propagation_matrix_two_grid(
+                    A_h)
 
                 eigvals_B_tgm = np.linalg.eigvals(B_tgm)
                 spectral_radius = np.max(np.abs(eigvals_B_tgm))
                 spectral_rads.append((c_, grid_size, spectral_radius))
                 rhs = f_rhs(c_, x, h)
-                M_inv_tgm = new_helmholtz_solvers.create_error_propagation_matrix_two_grid(A_h)
-                u_sol, rel_errors, convergence_flag = new_helmholtz_solvers.iterative_solve_conv(
-                    A_h, rhs, M_inv_tgm, tol=1e-6, max_iterations=10000)
+                M_inv_tgm = helmholtz_solvers.create_two_grid_method_M_inv(
+                    A_h)
+                u_sol, convergence_flag = helmholtz_solvers.iterative_solve(
+                    A_h, rhs, M_inv_tgm, tol=1e-6, max_iterations=10000, residuals=residuals)
+                rate_of_convergence = compute_rate_of_convergence(
+                    residuals=residuals)
                 if convergence_flag:
                     lines = [f"(c, h) = ({c_}, {h})\n",
-                             f"rate of convergence: {rel_errors[len(rel_errors)-5]:.3E}\n",
-                             f"spectral rad.: {spectral_radius:.3E}\n",
-                             f"min rate: {min(rel_errors):.3E}\n",
-                             f"avg. rate: {np.average(np.array(rel_errors)[2:-2]):.3E}\n"]
+                             f"rate of convergence: {rate_of_convergence:.3E}\n",
+                             f"spectral rad.: {spectral_radius:.3E}\n"]
                     f.writelines(lines)
                     f.write('\n')
                 else:
                     f.write(f"Convergence failed for (c, h) = ({c_}, h={h})\n")
 
 
+def experiments_exercise_12_5():
+    # compute and tabulate condition number of symmetric gauss-seidel
+    # preconditioned matrix inv(M_SGS)*A
+    c_values = [0.01, 0.1, 1, 10, 100]
+    grid_sizes = [10, 100, 1000]
+
+    with open("results_ex_12_5.txt", 'w') as f:
+        for c in c_values:
+            for grid_size in grid_sizes:
+                h = 1/grid_size
+                A_h = create_discretized_helmholtz_matrix(
+                    size=grid_size, c=c)/h**2
+                condition_number_A = compute_condition_number(
+                    A_h)
+                M_tgm_inv = helmholtz_solvers.create_two_grid_method_M_inv(
+                    A_h)
+                condition_number_prec_operator = np.linalg.cond(
+                    M_tgm_inv @ A_h)
+                line = f"(c, h) = ({c}, {h}) K_2(A): {condition_number_A}, K_2(M_SGS_i A): {condition_number_prec_operator}\n"
+                f.write(line)
+
+
+def experiments_exercise_12_6():
+    c_values = [0.01, 0.1, 1, 10, 100, 1000]
+    grid_sizes = [10, 100, 1000]
+
+    fig = plt.figure(figsize=(16, 8))
+    colors = cm.tab20b(np.linspace(0, 1, len(c_values)*len(grid_sizes)))
+    for i, c in enumerate(c_values):
+        for j, grid_size in enumerate(grid_sizes):
+            residuals = []
+            h = 1/grid_size
+            x = np.linspace(0, 1, grid_size+1)
+            x = x[1:-1]
+            A_h = create_discretized_helmholtz_matrix(
+                size=grid_size, c=c) / h**2
+            rhs = f_rhs(c, x, h)
+
+            M_tgm_inv = helmholtz_solvers.create_two_grid_method_M_inv(
+                A_h)
+
+            # _, _ = helmholtz_solvers.preconditioned_conjugate_gradient_with_ritz(
+            #     A, rhs, residuals=residuals_uncond)
+            u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
+                A_h, rhs=rhs, tol=1e-12, M_inv=M_tgm_inv, residuals=residuals)
+            assert convergence_flag
+            # Check solution
+            u_exact = analytical_solution(x)
+            # assert np.isclose(calculate_rmse(
+            #    u_sol, u_exact), 0, atol=1e-7)
+
+            cond_prec = np.linalg.cond(M_tgm_inv @ A_h)
+
+            plt.plot(
+                [np.linalg.norm(residual, ord=2) for residual in residuals], label=f"TGM PCG: $(c,h)=({c}, {h}), \kappa_2={cond_prec:.2E}$",
+                color=colors[j*len(c_values)+i])
+    plt.xlabel('# iterations')
+    plt.ylabel('2-norm of residual')
+    plt.legend(fontsize=8, loc='lower left')
+    fig.savefig(f"figures/plot_ex_12_6_convergence_prec.pdf")
+    fig.savefig(f"figures/plot_ex_12_6_convergence_prec.svg")
+
+
+def experiments_exercise_12_7():
+    c = 0.1
+    grid_size = 10
+
+    residuals = []
+    h = 1/grid_size
+    x = np.linspace(0, 1, grid_size+1)
+    x = x[1:-1]
+    A_h = create_discretized_helmholtz_matrix(size=grid_size, c=c)/h**2
+    rhs = f_rhs(c, x, h)
+
+    # residual preconditioning
+    M_tgm_inv = helmholtz_solvers.create_two_grid_method_M_inv(A_h)
+    prec_operator = np.matmul(M_tgm_inv, A_h)
+
+    u_sol, convergence_flag = helmholtz_solvers.preconditioned_conjugate_gradient(
+        A_h, rhs=rhs, tol=1e-10, M_inv=M_tgm_inv, residuals=residuals)  # if sys not prec, M_sgs_inv=None
+    assert convergence_flag  # "Problem did not converge"
+
+    series_of_ritz_values, ritz_values_max, ritz_values_min = compute_series_of_ritz_values(
+        prec_operator, residuals)  # if sys not preconditioned just use A_h
+    prec_operator_eigenvalues = np.linalg.eigvals(
+        prec_operator)  # if sys not preconditioned, just use A_h
+    max_eigval = np.max(prec_operator_eigenvalues)
+    min_eigval = np.min(prec_operator_eigenvalues)
+
+    # plot the sequences of ritz values and the eigenvalues of the (preconditioned) system
+    colors = cm.viridis(np.linspace(0, 1, len(series_of_ritz_values)))
+    fig = plt.figure(figsize=(16, 8))
+    plt.scatter(np.ones(len(prec_operator_eigenvalues)), sorted(
+        prec_operator_eigenvalues), label="eigenvalues A", color='tab:orange')
+    sorted_series_of_ritz_values = sorted(
+        series_of_ritz_values, key=lambda x: x[-1])
+    for i, (series_of_ritz_value, color) in enumerate(zip(sorted_series_of_ritz_values, colors)):
+        plt.plot(np.linspace(0, 1, len(series_of_ritz_value)),
+                 series_of_ritz_value, color=color)
+    plt.ylabel('real part')
+    plt.legend(fontsize=8)
+    fig.savefig("figures/plot_ex_12_7c_ritz_values.svg")
+    fig.savefig("figures/plot_ex_12_7c_ritz_values.pdf")
+
+    # plot the max and the min eigenvalues of every T_k matrix and the eigenvalues of the (preconditioned) system
+    fig = plt.figure(figsize=(16, 8))
+    plt.scatter(len(ritz_values_max)-1, max_eigval,
+                label="max eig A", marker='o', color='tab:orange')
+    plt.scatter(len(ritz_values_max)-1, min_eigval,
+                label="min eig A", marker='o', color='tab:orange')
+    plt.plot(ritz_values_max, label=f"max Ritz value", marker='.',
+             fillstyle='none', color='tab:cyan', markersize=5)
+    plt.plot(ritz_values_min, label=f"min Ritz value", marker='.',
+             fillstyle='none', color='tab:cyan', markersize=5)
+    plt.xlabel('# iterations')
+    plt.ylabel('real part')
+    plt.legend(fontsize=8)
+    fig.savefig("figures/plot_ex_12_7b_ritz_values.pdf")
+    fig.savefig("figures/plot_ex_12_7b_ritz_values.svg")
+
+
 if __name__ == "__main__":
-    # Example usage:
-    # A = create_discretized_helmholtz_matrix(5, 0.1)
-
-    # A = np.diag(np.linspace(1, 5, 10))  # Symmetric positive definite matrix
-    # b = np.ones(10)  # Right-hand side vector
-
-    # solution, ritz_values = conjugate_gradient_with_ritz(A, b)
-
-    # Print the solution and Ritz values
-
-    # Example usage:
-    # h = 8
-    # coarsening_matrix = create_coarsening_matrix(h)
-    # prolongation_matrix = create_prolongation_matrix(h)
     # Exercise 01
-    # experiments_exercise_1()
+    experiments_exercise_1()
     # Exercise 02, 03
-    # experiments_exercise_2_3()
+    experiments_exercise_2_3()
     # Exercise 04
-    # experiments_exercise_4()
+    experiments_exercise_4()
     # Exercise 05
-    # experiments_exercise_5()
+    experiments_exercise_5()
     # Exercise 06
-    # experiments_exercise_6()
+    experiments_exercise_6()
     # Exercise 07
-    # experiments_exercise_7()
-
+    experiments_exercise_7()
     # Exercise 08, 09
-    # experiments_exercise_8_9()
+    experiments_exercise_8_9()
     # Exercise 10
-    # experiments_exercise_10()
+    experiments_exercise_10()
     # Exercise 11
     experiments_exercise_11()
     # Exercise 12
-    # experiments_exercise_12()
-    # experiments_exercise_12_4()
+    experiments_exercise_12()
+    experiments_exercise_12_4a()
+    experiments_exercise_12_5()
+    experiments_exercise_12_6()
+    experiments_exercise_12_7()
