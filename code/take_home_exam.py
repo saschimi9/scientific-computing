@@ -586,7 +586,7 @@ def experiments_exercise_12():
                 grid_size, c_) / h**2
             rhs = f_rhs(c_, x, h)
 
-            B_tgm = helmholtz_solvers.create_two_grid_method_error_propagation_matrix(
+            B_tgm = helmholtz_solvers.create_error_propagation_matrix_two_grid(
                 A_h)
 
             eigvals_B_tgm = np.linalg.eigvals(B_tgm)
@@ -625,7 +625,7 @@ def experiments_exercise_12():
 
     with open("results_ex_12.txt", 'w') as f:
         for (c_, size, spectral_rad) in spectral_rads:
-            line = f"(c,h)=({c_:1E}, {1/size:1E}): rho(B_GS)={spectral_rad})\n"
+            line = f"(c,h)=({c_:1E}, {1/size:1E}): rho(B_TGM)={spectral_rad})\n"
             f.write(line)
 
 
